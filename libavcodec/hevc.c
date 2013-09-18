@@ -301,13 +301,6 @@ static int pic_arrays_init(HEVCContext *s)
     if (!s->tab_slice_address)
         goto fail;
 
-    s->cbf_luma = av_malloc(pic_width_in_min_tu * pic_height_in_min_tu);
-    s->is_pcm = av_malloc(pic_width_in_min_pu * pic_height_in_min_pu);
-    s->filter_slice_edges = av_malloc(ctb_count);
-
-    if (!s->cbf_luma || !s->is_pcm || !s->filter_slice_edges)
-        goto fail;
-
     s->qp_y_tab = av_malloc(pic_size_in_ctb * sizeof(*s->qp_y_tab));
     if (!s->qp_y_tab)
         goto fail;
@@ -930,7 +923,7 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
     // Derive QP for dequant
     if(!lc->cu.cu_transquant_bypass_flag) {
         int qp_y = lc->qp_y;
-        static int qp_c[] = { 29, 30, 31, 32, 33, 33, 34, 34, 35, 35, 36, 36, 37, 37 };
+        const uint8_t qp_c[] = { 29, 30, 31, 32, 33, 33, 34, 34, 35, 35, 36, 36, 37, 37 };
         if (c_idx == 0) {
             qp = qp_y + s->sps->qp_bd_offset;
         } else {
@@ -1065,7 +1058,7 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
 
         int offset = i << 4;
 
-        uint8_t significant_coeff_flag_idx[16] = {0};
+        uint8_t significant_coeff_flag_idx[16];
         uint8_t coeff_abs_level_greater1_flag[16] = {0};
         uint8_t coeff_abs_level_greater2_flag[16] = {0};
         uint16_t coeff_sign_flag;
@@ -1196,7 +1189,6 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
                 }
             }
             coeffs[y_c * trafo_size + x_c] = trans_coeff_level;
-
         }
     }
 
