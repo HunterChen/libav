@@ -1892,13 +1892,6 @@ static int luma_intra_pred_mode(HEVCContext *s, int x0, int y0, int pu_size,
 
         for (j = 0; j < size_in_pus; j++) {
             tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].is_intra     = 1;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].pred_flag    = 0;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].ref_idx[0]   = 0;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].ref_idx[1]   = 0;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].mv[0].x      = 0;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].mv[0].y      = 0;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].mv[1].x      = 0;
-            tab_mvf[(y_pu + j) * pic_width_in_min_pu + x_pu + i].mv[1].y      = 0;
         }
     }
 
