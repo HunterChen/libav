@@ -879,33 +879,34 @@ int ff_hevc_coeff_abs_level_greater2_flag_decode(HEVCContext *s, int c_idx,
     return GET_CABAC(elem_offset[COEFF_ABS_LEVEL_GREATER2_FLAG] + inc);
 }
 
-int ff_hevc_coeff_abs_level_remaining(HEVCContext *s, int base_level)
+int ff_hevc_coeff_abs_level_remaining(HEVCContext *s, int base_level, int *rc_rice_param)
 {
-    int i;
-    HEVCLocalContext *lc = s->HEVClc;
     int prefix = 0;
     int suffix = 0;
+    int last_coeff_abs_level_remaining;
+    int i;
 
     while (prefix < CABAC_MAX_BIN && get_cabac_bypass(&s->HEVClc->cc))
         prefix++;
     if (prefix == CABAC_MAX_BIN)
         av_log(s->avctx, AV_LOG_ERROR, "CABAC_MAX_BIN : %d\n", prefix);
     if (prefix < 3) {
-        for (i = 0; i < lc->c_rice_param; i++)
+        for (i = 0; i < *rc_rice_param; i++)
             suffix = (suffix << 1) | get_cabac_bypass(&s->HEVClc->cc);
-        lc->last_coeff_abs_level_remaining = (prefix << lc->c_rice_param) + suffix;
+        last_coeff_abs_level_remaining = (prefix << *rc_rice_param) + suffix;
     } else {
-        for (i = 0; i < prefix - 3 + lc->c_rice_param; i++)
+        int prefix_minus3 = prefix - 3;
+        for (i = 0; i < prefix_minus3 + *rc_rice_param; i++)
             suffix = (suffix << 1) | get_cabac_bypass(&s->HEVClc->cc);
-        lc->last_coeff_abs_level_remaining = (((1 << (prefix - 3)) + 3 - 1)
-                                              << lc->c_rice_param) + suffix;
+        last_coeff_abs_level_remaining = (((1 << prefix_minus3) + 3 - 1)
+                                              << *rc_rice_param) + suffix;
     }
 
-    lc->c_rice_param = FFMIN(lc->c_rice_param +
-                             ((base_level + lc->last_coeff_abs_level_remaining) >
-                              (3 * (1 << lc->c_rice_param))), 4);
+    *rc_rice_param = FFMIN(*rc_rice_param +
+                             ((base_level + last_coeff_abs_level_remaining) >
+                              (3 * (1 << *rc_rice_param))), 4);
 
-    return lc->last_coeff_abs_level_remaining;
+    return last_coeff_abs_level_remaining;
 }
 
 int ff_hevc_coeff_sign_flag(HEVCContext *s, uint8_t nb)

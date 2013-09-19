@@ -971,7 +971,7 @@ int ff_hevc_significant_coeff_flag_decode(HEVCContext *s, int c_idx, int x_c, in
 int ff_hevc_coeff_abs_level_greater1_flag_decode(HEVCContext *s, int c_idx);
 int ff_hevc_coeff_abs_level_greater2_flag_decode(HEVCContext *s, int c_idx,
                                                  int i, int n);
-int ff_hevc_coeff_abs_level_remaining(HEVCContext *s, int base_level);
+int ff_hevc_coeff_abs_level_remaining(HEVCContext *s, int base_level, int *rc_rice_param);
 int ff_hevc_coeff_sign_flag(HEVCContext *s, uint8_t nb);
 
 int ff_hevc_get_num_poc(HEVCContext *s);
