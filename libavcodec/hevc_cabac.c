@@ -845,21 +845,11 @@ int ff_hevc_significant_coeff_flag_decode(HEVCContext *s, int c_idx, int x_c, in
     return GET_CABAC(elem_offset[SIGNIFICANT_COEFF_FLAG] + inc);
 }
 
-int ff_hevc_coeff_abs_level_greater1_flag_decode(HEVCContext *s, int c_idx,
-                                                 int i, int n,
-                                                 int first_elem,
-                                                 int first_subset)
+int ff_hevc_coeff_abs_level_greater1_flag_decode(HEVCContext *s, int c_idx)
 {
 
     int inc;
 
-    if (first_elem) {
-        s->HEVClc->ctx_set = (i > 0 && c_idx == 0) ? 2 : 0;
-
-        if (!first_subset && s->HEVClc->greater1_ctx == 0)
-            s->HEVClc->ctx_set++;
-        s->HEVClc->greater1_ctx = 1;
-    }
 
     inc = (s->HEVClc->ctx_set << 2) + s->HEVClc->greater1_ctx;
     if (c_idx > 0)

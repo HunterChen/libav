@@ -1114,21 +1114,31 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
         last_nz_pos_in_cg = -1;
         num_sig_coeff = 0;
         first_greater1_coeff_idx = -1;
+        // initialize first elem of coeff_bas_level_greater1_flag
+        if (n_end) {
+            s->HEVClc->ctx_set = (i > 0 && c_idx == 0) ? 2 : 0;
+            if (!(i == num_last_subset) && s->HEVClc->greater1_ctx == 0)
+                s->HEVClc->ctx_set++;
+            s->HEVClc->greater1_ctx = 1;
+            last_nz_pos_in_cg = significant_coeff_flag_idx[0];
+        }
+
         for (m = 0; m < n_end; m++) {
-            n = significant_coeff_flag_idx[m];
             if (num_sig_coeff < 8) {
-                coeff_abs_level_greater1_flag[n] =
-                ff_hevc_coeff_abs_level_greater1_flag_decode(s, c_idx, i, n,
-                                                             (num_sig_coeff == 0),
-                                                             (i == num_last_subset));
+                int n_idx = significant_coeff_flag_idx[m];
+                coeff_abs_level_greater1_flag[n_idx] =
+                ff_hevc_coeff_abs_level_greater1_flag_decode(s, c_idx);
                 num_sig_coeff++;
-                if (coeff_abs_level_greater1_flag[n] &&
+                if (coeff_abs_level_greater1_flag[n_idx] &&
                     first_greater1_coeff_idx == -1)
-                    first_greater1_coeff_idx = n;
+                    first_greater1_coeff_idx = n_idx;
+            } else {
+                break;
             }
-            if (last_nz_pos_in_cg == -1)
-                last_nz_pos_in_cg = n;
-            first_nz_pos_in_cg = n;
+        }
+
+        if (n_end) {
+            first_nz_pos_in_cg = significant_coeff_flag_idx[n_end - 1];
         }
 
         sign_hidden = (last_nz_pos_in_cg - first_nz_pos_in_cg >= 4 &&
