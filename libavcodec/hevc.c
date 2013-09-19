@@ -1145,7 +1145,9 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
 
         num_sig_coeff = 0;
         sum_abs = 0;
-        first_elem = 1;
+        lc->c_rice_param = 0;
+        lc->last_coeff_abs_level_remaining = 0;
+
         for (m = 0; m < n_end; m++) {
             n = significant_coeff_flag_idx[m];
             GET_COORD(offset, n);
@@ -1153,8 +1155,7 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
                                 coeff_abs_level_greater2_flag[n];
             if (trans_coeff_level == ((num_sig_coeff < 8) ?
                                       ((n == first_greater1_coeff_idx) ? 3 : 2) : 1)) {
-                trans_coeff_level += ff_hevc_coeff_abs_level_remaining(s, first_elem, trans_coeff_level);
-                first_elem = 0;
+                trans_coeff_level += ff_hevc_coeff_abs_level_remaining(s, trans_coeff_level);
             }
             if (s->pps->sign_data_hiding_flag && sign_hidden) {
                 sum_abs += trans_coeff_level;

@@ -889,17 +889,12 @@ int ff_hevc_coeff_abs_level_greater2_flag_decode(HEVCContext *s, int c_idx,
     return GET_CABAC(elem_offset[COEFF_ABS_LEVEL_GREATER2_FLAG] + inc);
 }
 
-int ff_hevc_coeff_abs_level_remaining(HEVCContext *s, int first_elem, int base_level)
+int ff_hevc_coeff_abs_level_remaining(HEVCContext *s, int base_level)
 {
     int i;
     HEVCLocalContext *lc = s->HEVClc;
     int prefix = 0;
     int suffix = 0;
-
-    if (first_elem) {
-        lc->c_rice_param = 0;
-        lc->last_coeff_abs_level_remaining = 0;
-    }
 
     while (prefix < CABAC_MAX_BIN && get_cabac_bypass(&s->HEVClc->cc))
         prefix++;
