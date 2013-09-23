@@ -974,7 +974,7 @@ int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc);
  * Find next frame in output order and put a reference to it in frame.
  * @return 1 if a frame was output, 0 otherwise
  */
-int ff_hevc_output_frame(HEVCContext *s, AVFrame *frame, int flush, int* poc_display);
+int ff_hevc_output_frame(HEVCContext *s, AVFrame *frame, int flush);
 
 void ff_hevc_unref_frame(HEVCContext *s, HEVCFrame *frame, int flags);
 

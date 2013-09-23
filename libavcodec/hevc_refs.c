@@ -181,7 +181,7 @@ int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc)
     return -1;
 }
 
-int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush, int* poc_display)
+int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
 {
     int nb_output = 0;
     int min_poc   = 0xFFFF;
@@ -214,10 +214,6 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush, int* poc_displ
             dst = out;
             src = frame->frame;
 
-            dst = out;
-            src = frame->frame;
-
-            *poc_display = frame->poc;
             frame->flags &= ~HEVC_FRAME_FLAG_OUTPUT;
             ret = av_frame_ref(dst, src);
             if (ret < 0)
