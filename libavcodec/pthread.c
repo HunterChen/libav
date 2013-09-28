@@ -129,6 +129,7 @@ typedef struct FrameThreadContext {
     PerThreadContext *prev_thread; ///< The last thread submit_packet() was called on.
 
     pthread_mutex_t buffer_mutex;  ///< Mutex used to protect get/release_buffer().
+    pthread_mutex_t dpb_mutex;     ///< Mutex used to protect get/release_buffer().
 
     int next_decoding;             ///< The next context to submit a packet to.
     int next_finished;             ///< The next context to return output from.
@@ -669,6 +670,19 @@ void ff_thread_await_progress(ThreadFrame *f, int n, int field)
     while (progress[field] < n)
         pthread_cond_wait(&p->progress_cond, &p->progress_mutex);
     pthread_mutex_unlock(&p->progress_mutex);
+}
+
+void ff_thread_mutex_lock_dpb(AVCodecContext *avctx)
+{
+    PerThreadContext   *p  = avctx->thread_opaque;
+    FrameThreadContext *p1 = p->parent;
+    pthread_mutex_lock(&p1->dpb_mutex);
+}
+void ff_thread_mutex_unlock_dpb(AVCodecContext *avctx)
+{
+    PerThreadContext   *p  = avctx->thread_opaque;
+    FrameThreadContext *p1 = p->parent;
+    pthread_mutex_unlock(&p1->dpb_mutex);
 }
 
 void ff_thread_finish_setup(AVCodecContext *avctx) {

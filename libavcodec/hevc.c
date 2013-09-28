@@ -265,7 +265,6 @@ static int pic_arrays_init(HEVCContext *s)
     int pic_size_in_min_pu   = pic_width_in_min_pu * pic_height_in_min_pu;
     int pic_width_in_min_tu = s->sps->pic_width_in_min_tbs;
     int pic_height_in_min_tu = s->sps->pic_height_in_min_tbs;
-    int i;
 
     s->bs_width  = pic_width  >> 3;
     s->bs_height = pic_height >> 3;
@@ -1681,6 +1680,8 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         }
     }
 
+    ff_hevc_wait_neighbour_ctb(s, &current_mv, x0, y0);
+
     if (current_mv.pred_flag == 1) {
         DECLARE_ALIGNED(16, int16_t, tmp [MAX_PB_SIZE * MAX_PB_SIZE]);
         DECLARE_ALIGNED(16, int16_t, tmp2[MAX_PB_SIZE * MAX_PB_SIZE]);
@@ -2291,6 +2292,8 @@ static int hls_decode_entry(AVCodecContext *avctxt, void *isFilterThread)
 
         hls_sao_param(s, x_ctb >> s->sps->log2_ctb_size, y_ctb >> s->sps->log2_ctb_size);
 
+        ff_hevc_wait_collocated_ctb(s, x_ctb, y_ctb);
+
         s->deblock[ctb_addr_rs].disable     = s->sh.disable_deblocking_filter_flag;
         s->deblock[ctb_addr_rs].beta_offset = s->sh.beta_offset;
         s->deblock[ctb_addr_rs].tc_offset   = s->sh.tc_offset;
@@ -2795,7 +2798,9 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
                 restore_tqb_pixels(s);
             }
             s->ref->is_decoded = 1;
+            ff_hevc_thread_cnt_dec_ref(s);
         }
+
         if (ctb_addr_ts < 0)
             return ctb_addr_ts;
         break;
@@ -3068,8 +3073,12 @@ static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
             s->is_md5 = 0;
         }
 #ifdef POC_DISPLAY_MD5
+        if (s->threads_type == FF_THREAD_FRAME )
+            ff_thread_mutex_lock_dpb(s->avctx);
         printf_ref_pic_list(s);
         print_md5(s->poc, md5);
+        if (s->threads_type == FF_THREAD_FRAME )
+            ff_thread_mutex_unlock_dpb(s->avctx);
 #endif
     }
 
@@ -3105,8 +3114,7 @@ static av_cold int hevc_decode_free(AVCodecContext *avctx)
     HEVCLocalContext *lc = s->HEVClc;
     int i, j;
 
-    if(avctx->internal->is_copy)
-        return 0;
+
     pic_arrays_free(s);
     av_freep(&s->rbsp_buffer);
     av_freep(&s->skipped_bytes_pos);
@@ -3187,6 +3195,7 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
         s->DPB[i]->frame = av_frame_alloc();
         if (!s->DPB[i]->frame)
             return AVERROR(ENOMEM);
+        s->DPB[i]->threadFrame.f        = s->DPB[i]->frame;
     }
     memset(s->vps_list, 0, sizeof(s->vps_list));
     memset(s->sps_list, 0, sizeof(s->sps_list));
@@ -3207,9 +3216,16 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
     else
         s->threads_number = 1;
     
+    if((avctx->active_thread_type & FF_THREAD_FRAME) && avctx->thread_count > 1)
+        s->threads_type = FF_THREAD_FRAME;
+    else
+        s->threads_type = FF_THREAD_SLICE;
+    
     if (avctx->extradata_size > 0 && avctx->extradata)
         return decode_nal_units(s, s->avctx->extradata, s->avctx->extradata_size);
     s->width = s->height = 0;
+
+    avctx->internal->allocate_progress = 1;
 
     return 0;
 }
@@ -3251,6 +3267,7 @@ AVCodec ff_hevc_decoder = {
     .init           = hevc_decode_init,
     .close          = hevc_decode_free,
     .decode         = hevc_decode_frame,
+    .init_thread_copy = hevc_decode_init,
     .update_thread_context = ONLY_IF_THREADS_ENABLED(hevc_update_thread_context),
     .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY | CODEC_CAP_SLICE_THREADS | CODEC_CAP_FRAME_THREADS,
     .flush          = hevc_decode_flush,

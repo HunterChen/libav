@@ -355,7 +355,13 @@ int ff_hevc_decode_nal_vps(HEVCContext *s)
     }
     get_bits1(gb); /* vps_extension_flag */
 
-    av_free(s->vps_list[vps_id]);
+    if (s->vps_list[vps_id] != NULL && s->threads_type == FF_THREAD_FRAME ) {
+        ff_thread_mutex_lock_dpb(s->avctx);
+        if (s->vps_list[vps_id]->threadCnt == 0)
+            av_free(s->vps_list[vps_id]);
+        ff_thread_mutex_unlock_dpb(s->avctx);
+    } else
+        av_free(s->vps_list[vps_id]);
     s->vps_list[vps_id] = vps;
     return 0;
 
@@ -778,7 +784,13 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
                sps->max_transform_hierarchy_depth_intra);
         goto err;
     }
-    av_free(s->sps_list[sps_id]);
+    if (s->sps_list[sps_id] != NULL && s->threads_type == FF_THREAD_FRAME ) {
+        ff_thread_mutex_lock_dpb(s->avctx);
+        if (s->sps_list[sps_id]->threadCnt == 0)
+            av_free(s->sps_list[sps_id]);
+        ff_thread_mutex_unlock_dpb(s->avctx);
+    } else
+    	av_free(s->sps_list[sps_id]);
     s->sps_list[sps_id] = sps;
     return 0;
 err:
@@ -897,6 +909,11 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
     pps->entropy_coding_sync_enabled_flag = get_bits1(gb);
 
     if (pps->tiles_enabled_flag) {
+        if (s->threads_type == FF_THREAD_FRAME) {
+            av_log(s->avctx, AV_LOG_ERROR, "Frame base and tiles enabled not yet implemented\n");
+            ret = AVERROR_INVALIDDATA;
+            goto err;
+        }
         pps->num_tile_columns     = get_ue_golomb_long(gb) + 1;
         pps->num_tile_rows        = get_ue_golomb_long(gb) + 1;
         if (pps->num_tile_columns == 0 ||
@@ -1130,7 +1147,12 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
         }
     }
 
-    if (s->pps_list[pps_id] != NULL)
+    if (s->pps_list[pps_id] != NULL && s->threads_type == FF_THREAD_FRAME ) {
+        ff_thread_mutex_lock_dpb(s->avctx);
+        if (s->pps_list[pps_id]->threadCnt == 0)
+            ff_hevc_pps_free(&s->pps_list[pps_id]);
+        ff_thread_mutex_unlock_dpb(s->avctx);
+    } else if (s->pps_list[pps_id] != NULL)
         ff_hevc_pps_free(&s->pps_list[pps_id]);
 
     s->pps_list[pps_id] = pps;
