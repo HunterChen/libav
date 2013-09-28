@@ -227,8 +227,6 @@ static const uint8_t diag_scan8x8_inv[8][8] = {
 /* free everything allocated  by pic_arrays_init() */
 static void pic_arrays_free(HEVCContext *s)
 {
-    int i;
-
     av_freep(&s->sao);
     av_freep(&s->deblock);
     av_freep(&s->split_cu_flag);
@@ -250,12 +248,7 @@ static void pic_arrays_free(HEVCContext *s)
     av_freep(&s->sh.entry_point_offset);
     av_freep(&s->sh.size);
     av_freep(&s->sh.offset);
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        av_freep(&s->DPB[i].tab_mvf);
-        ff_hevc_free_refPicListTab(s, &s->DPB[i]);
-        av_freep(&s->DPB[i].refPicListTab);
-    }
+    ff_hevc_dpb_free(s);
 }
 
 /* allocate arrays that depend on frame dimensions */
@@ -309,19 +302,8 @@ static int pic_arrays_init(HEVCContext *s)
     s->vertical_bs   = av_mallocz(2 * s->bs_width * (s->bs_height + 1));
     if (!s->horizontal_bs || !s->vertical_bs)
         goto fail;
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        HEVCFrame *f = &s->DPB[i];
-        f->tab_mvf = av_malloc_array(pic_size_in_min_pu, sizeof(*f->tab_mvf));
-        if (!f->tab_mvf)
-            goto fail;
-
-        f->refPicListTab = av_mallocz_array(ctb_count, sizeof(*f->refPicListTab));
-        if (!f->refPicListTab)
-            goto fail;
-        f->ctb_count = ctb_count;
-    }
-
+    if (ff_hevc_dpb_malloc(s, pic_size_in_min_pu, ctb_count))
+        goto fail;
     return 0;
 fail:
     pic_arrays_free(s);
@@ -1702,7 +1684,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         DECLARE_ALIGNED(16, int16_t, tmp2[MAX_PB_SIZE * MAX_PB_SIZE]);
 
         luma_mc(s, tmp, tmpstride,
-                s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]].frame,
+                s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]]->frame,
                 &current_mv.mv[0], x0, y0, nPbW, nPbH);
 
         if ((s->sh.slice_type == P_SLICE && s->pps->weighted_pred_flag) ||
@@ -1715,7 +1697,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
             s->hevcdsp.put_unweighted_pred(dst0, s->frame->linesize[0], tmp, tmpstride, nPbW, nPbH);
         }
         chroma_mc(s, tmp, tmp2, tmpstride,
-                  s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]].frame,
+                  s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]]->frame,
                   &current_mv.mv[0], x0 / 2, y0 / 2, nPbW / 2, nPbH / 2);
 
         if ((s->sh.slice_type == P_SLICE && s->pps->weighted_pred_flag) ||
@@ -1739,7 +1721,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         DECLARE_ALIGNED(16, int16_t, tmp2[MAX_PB_SIZE * MAX_PB_SIZE]);
 
         luma_mc(s, tmp, tmpstride,
-                s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]].frame,
+                s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]]->frame,
                 &current_mv.mv[1], x0, y0, nPbW, nPbH);
 
         if ((s->sh.slice_type == P_SLICE && s->pps->weighted_pred_flag) ||
@@ -1754,7 +1736,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         }
 
         chroma_mc(s, tmp, tmp2, tmpstride,
-                  s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]].frame,
+                  s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]]->frame,
                   &current_mv.mv[1], x0/2, y0/2, nPbW/2, nPbH/2);
 
         if ((s->sh.slice_type == P_SLICE && s->pps->weighted_pred_flag) ||
@@ -1778,10 +1760,10 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         DECLARE_ALIGNED(16, int16_t, tmp4[MAX_PB_SIZE * MAX_PB_SIZE]);
 
         luma_mc(s, tmp, tmpstride,
-                s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]].frame,
+                s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]]->frame,
                 &current_mv.mv[0], x0, y0, nPbW, nPbH);
         luma_mc(s, tmp2, tmpstride,
-                s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]].frame,
+                s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]]->frame,
                 &current_mv.mv[1], x0, y0, nPbW, nPbH);
 
         if ((s->sh.slice_type == P_SLICE && s->pps->weighted_pred_flag) ||
@@ -1797,10 +1779,10 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         }
 
         chroma_mc(s, tmp, tmp2, tmpstride,
-                  s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]].frame,
+                  s->DPB[refPicList[0].idx[current_mv.ref_idx[0]]]->frame,
                   &current_mv.mv[0], x0/2, y0/2, nPbW/2, nPbH/2);
         chroma_mc(s, tmp3, tmp4, tmpstride,
-                  s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]].frame,
+                  s->DPB[refPicList[1].idx[current_mv.ref_idx[1]]]->frame,
                   &current_mv.mv[1], x0/2, y0/2, nPbW/2, nPbH/2);
 
         if ((s->sh.slice_type == P_SLICE && s->pps->weighted_pred_flag) ||
@@ -3092,8 +3074,24 @@ static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
 
 static int hevc_update_thread_context(AVCodecContext *dst, const AVCodecContext *src){
     HEVCContext *h = dst->priv_data, *h1 = src->priv_data;
-    memcpy(h, h1, sizeof(*h));
-    h->avctx = dst; 
+    if(dst != src)  {
+        h->threads_number = h1->threads_number;
+        h->decode_checksum_sei = h1->decode_checksum_sei;
+        h->disable_au = h1->disable_au;
+     
+        
+        memcpy(h->DPB, h1->DPB, sizeof(h1->DPB));
+        memcpy(h->vps_list, h1->vps_list, sizeof(h1->vps_list));
+        memcpy(h->sps_list, h1->sps_list, sizeof(h1->sps_list));
+        memcpy(h->pps_list, h1->pps_list, sizeof(h1->pps_list));
+        h->seq_decode = h1->seq_decode;
+        h->seq_output = h1->seq_output;
+        h->strict_def_disp_win = h1->strict_def_disp_win;
+        h->pocTid0 = h1->pocTid0;
+        h->curr_dpb_idx = h1->curr_dpb_idx;
+        h->max_ra = h1->max_ra;
+        h->prev_sps_id = h1->prev_sps_id;
+    }
     return 0;
 }
 
@@ -3140,15 +3138,18 @@ static av_cold int hevc_decode_free(AVCodecContext *avctx)
         }
         av_freep(&s->ctb_entry_count);
     }
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++)
-        av_frame_free(&s->DPB[i].frame);
-    for (i = 0; i < FF_ARRAY_ELEMS(s->vps_list); i++)
-        av_freep(&s->vps_list[i]);
-    for (i = 0; i < FF_ARRAY_ELEMS(s->sps_list); i++)
-        av_freep(&s->sps_list[i]);
-    for (i = 0; i < FF_ARRAY_ELEMS(s->pps_list); i++)
-        ff_hevc_pps_free(&s->pps_list[i]);
+    if(!avctx->internal->is_copy) {
+        for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
+            av_frame_free(&s->DPB[i]->frame);
+            av_freep(&s->DPB[i]);
+        }
+        for (i = 0; i < FF_ARRAY_ELEMS(s->vps_list); i++)
+            av_freep(&s->vps_list[i]);
+        for (i = 0; i < FF_ARRAY_ELEMS(s->sps_list); i++)
+            av_freep(&s->sps_list[i]);
+        for (i = 0; i < FF_ARRAY_ELEMS(s->pps_list); i++)
+            ff_hevc_pps_free(&s->pps_list[i]);
+    }
 
     av_freep(&s->HEVClcList[0]);
     return 0;
@@ -3175,9 +3176,12 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
     if (!s->tmp_frame)
         return AVERROR(ENOMEM);
     s->max_ra = INT_MAX;
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        s->DPB[i].frame = av_frame_alloc();
-        if (!s->DPB[i].frame)
+    for (i = 0; !avctx->internal->is_copy && i < FF_ARRAY_ELEMS(s->DPB); i++) {
+        s->DPB[i] = av_mallocz(sizeof(*s->DPB[i]));
+        if (!s->DPB[i])
+            return AVERROR(ENOMEM);
+        s->DPB[i]->frame = av_frame_alloc();
+        if (!s->DPB[i]->frame)
             return AVERROR(ENOMEM);
     }
     memset(s->vps_list, 0, sizeof(s->vps_list));
@@ -3190,6 +3194,7 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
         if (!lc->tt.cbf_cb[i] || !lc->tt.cbf_cr[i])
             return AVERROR(ENOMEM);
     }
+
     s->skipped_bytes_pos_size = 1024; // initial buffer size
     s->skipped_bytes_pos = av_malloc_array(s->skipped_bytes_pos_size, sizeof(*s->skipped_bytes_pos));
     s->enable_parallel_tiles = 0;
