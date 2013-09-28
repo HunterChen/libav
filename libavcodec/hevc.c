@@ -1643,6 +1643,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
                 current_mv.pred_flag += 1;
                 hls_mvd_coding(s, x0, y0, 0);
                 mvp_flag[0] = ff_hevc_mvp_lx_flag_decode(s);
+
                 ff_hevc_luma_mv_mvp_mode(s, x0, y0, nPbW, nPbH, log2_cb_size,
                                          partIdx, merge_idx, &current_mv, mvp_flag[0], 0);
                 current_mv.mv[0].x += lc->pu.mvd.x;
@@ -1663,6 +1664,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
                 }
 
                 current_mv.pred_flag += 2;
+
                 mvp_flag[1] = ff_hevc_mvp_lx_flag_decode(s);
                 ff_hevc_luma_mv_mvp_mode(s, x0, y0, nPbW, nPbH, log2_cb_size,
                                          partIdx, merge_idx, &current_mv, mvp_flag[1], 1);
@@ -2605,23 +2607,22 @@ static int hls_slice_data_wpp(HEVCContext *s, const uint8_t *nal, int length)
 static int hls_nal_unit(HEVCContext *s)
 {
     GetBitContext *gb = &s->HEVClc->gb;
-    int nuh_layer_id;
 
     if (get_bits1(gb) != 0)
         return AVERROR_INVALIDDATA;
 
     s->nal_unit_type = get_bits(gb, 6);
 
-    nuh_layer_id   = get_bits(gb, 6);
+    s->nuh_layer_id = get_bits(gb, 6);
     s->temporal_id = get_bits(gb, 3) - 1;
     if (s->temporal_id < 0)
         return AVERROR_INVALIDDATA;
 
     av_log(s->avctx, AV_LOG_DEBUG,
            "nal_unit_type: %d, nuh_layer_id: %dtemporal_id: %d\n",
-           s->nal_unit_type, nuh_layer_id, s->temporal_id);
+           s->nal_unit_type, s->nuh_layer_id, s->temporal_id);
 
-    return (nuh_layer_id == 0);
+    return (s->nuh_layer_id == 0);
 }
 
 static void restore_tqb_pixels(HEVCContext *s)
@@ -2715,6 +2716,7 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
     case NAL_RASL_N:
     case NAL_RASL_R:
         ret = hls_slice_header(s);
+
         lc->isFirstQPgroup = !s->sh.dependent_slice_segment_flag;
 
         if (ret < 0)
@@ -2774,8 +2776,9 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
                 if ((ret = ff_hevc_set_new_ref(s, &s->frame, s->poc))< 0)
                     return ret;
             }
+        } else {
+            ff_hevc_set_ref_pic_list(s, s->DPB[ff_hevc_find_next_ref(s, s->poc)]);
         }
-
         if (!lc->edge_emu_buffer)
             lc->edge_emu_buffer = av_malloc((MAX_PB_SIZE + 7) * s->frame->linesize[0]);
         if (!lc->edge_emu_buffer)
@@ -2791,6 +2794,7 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
             if((s->pps->transquant_bypass_enable_flag || (s->sps->pcm.loop_filter_disable_flag && s->sps->pcm_enabled_flag)) && s->sps->sample_adaptive_offset_enabled_flag) {
                 restore_tqb_pixels(s);
             }
+            s->ref->is_decoded = 1;
         }
         if (ctb_addr_ts < 0)
             return ctb_addr_ts;
@@ -3037,14 +3041,14 @@ static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
         return 0;
     }
 
+    if ((ret = ff_hevc_output_frame(s, data, 0)) < 0)
+        return ret;
+    *got_output = ret;
+
     if ((ret = decode_nal_units(s, avpkt->data, avpkt->size)) < 0) {
         return ret;
     }
-    if ((s->is_decoded && (ret = ff_hevc_output_frame(s, data, 0))) < 0) {
-        return ret;
-    }
 
-    *got_output = ret;
     if (s->decode_checksum_sei && s->is_decoded) {
         AVFrame *frame = s->ref->frame;
         int cIdx;

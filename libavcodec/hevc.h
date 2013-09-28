@@ -747,6 +747,7 @@ typedef struct HEVCFrame {
      * after a POC reset
      */
     uint16_t sequence;
+    int is_decoded;
 } HEVCFrame;
 
 typedef struct Filter_data {
@@ -965,8 +966,10 @@ int ff_hevc_coeff_sign_flag(HEVCContext *s, uint8_t nb);
 
 int ff_hevc_get_num_poc(HEVCContext *s);
 
+int ff_hevc_find_next_ref(HEVCContext *s, int poc);
 int ff_hevc_find_ref_idx(HEVCContext *s, int poc);
 int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc);
+void ff_hevc_set_ref_pic_list(HEVCContext *s, HEVCFrame *ref);
 
 /**
  * Find next frame in output order and put a reference to it in frame.
