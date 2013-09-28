@@ -50,7 +50,7 @@ int ff_hevc_find_ref_idx(HEVCContext *s, int poc)
     return 0;
 }
 
-void ff_hevc_free_refPicListTab(HEVCContext *s, HEVCFrame *ref)
+static void free_refPicListTab(HEVCContext *s, HEVCFrame *ref)
 {
     int j;
     int ctb_count = ref->ctb_count;
@@ -75,7 +75,7 @@ void ff_hevc_unref_frame(HEVCContext *s, HEVCFrame *frame, int flags)
     frame->flags &= ~flags;
     if (!frame->flags) {
         av_frame_unref(frame->frame);
-        ff_hevc_free_refPicListTab(s, frame);
+        free_refPicListTab(s, frame);
     }
 }
 
@@ -452,7 +452,7 @@ void ff_hevc_dpb_free(HEVCContext *s)
     for (i = 0; (!s->avctx->internal->is_copy) && i < FF_ARRAY_ELEMS(s->DPB); i++) {
         if(s->DPB[i]) {
             av_freep(&s->DPB[i]->tab_mvf);
-            ff_hevc_free_refPicListTab(s, s->DPB[i]);
+            free_refPicListTab(s, s->DPB[i]);
             av_freep(&s->DPB[i]->refPicListTab);
         }
     }

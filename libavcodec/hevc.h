@@ -913,7 +913,6 @@ int ff_hevc_compute_poc(HEVCContext *s, int poc_lsb);
 int ff_hevc_add_ref(HEVCContext *s, AVFrame *frame, int poc);
 int ff_hevc_dpb_malloc(HEVCContext *s, int pic_size_in_min_pu, int ctb_count);
 void ff_hevc_dpb_free(HEVCContext *s);
-void ff_hevc_free_refPicListTab(HEVCContext *s, HEVCFrame *ref);
 RefPicList* ff_hevc_get_ref_list(HEVCContext *s, int short_ref_idx, int x0, int y0);
 void ff_hevc_set_ref_poc_list(HEVCContext *s);
 
