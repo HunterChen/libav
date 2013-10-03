@@ -497,6 +497,9 @@ static int hls_slice_header(HEVCContext *s)
         s->avctx->pix_fmt      = s->sps->pix_fmt;
         s->avctx->sample_aspect_ratio = s->sps->vui.sar;
 
+        for (i = 0; i < MAX_SUB_LAYERS && s->sps->temporal_layer[i].num_reorder_pics != 0; i++)
+            s->avctx->has_b_frames = s->sps->temporal_layer[i].num_reorder_pics;
+
         if (s->sps->chroma_format_idc == 0 || s->sps->separate_colour_plane_flag) {
             av_log(s->avctx, AV_LOG_ERROR,
                    "TODO: s->sps->chroma_format_idc == 0 || "

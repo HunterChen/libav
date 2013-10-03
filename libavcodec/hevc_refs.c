@@ -188,7 +188,7 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
 
         /* wait for more frames before output */
         if (!flush && s->seq_output == s->seq_decode && s->sps &&
-            nb_output <= s->sps->temporal_layer[s->temporal_id].num_reorder_pics + 1)
+            nb_output <= s->sps->temporal_layer[s->temporal_id].num_reorder_pics)
             return 0;
 
         if (nb_output) {
