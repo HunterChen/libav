@@ -393,10 +393,11 @@ static void decode_vui(HEVCContext *s, HEVCSPS *sps)
 
     vui->default_display_window_flag = get_bits1(gb);
     if (vui->default_display_window_flag) {
-        vui->def_disp_win.left_offset   = get_ue_golomb(gb);
-        vui->def_disp_win.right_offset  = get_ue_golomb(gb);
-        vui->def_disp_win.top_offset    = get_ue_golomb(gb);
-        vui->def_disp_win.bottom_offset = get_ue_golomb(gb);
+        //TODO: * 2 is only valid for 420
+        vui->def_disp_win.left_offset   = get_ue_golomb(gb) * 2;
+        vui->def_disp_win.right_offset  = get_ue_golomb(gb) * 2;
+        vui->def_disp_win.top_offset    = get_ue_golomb(gb) * 2;
+        vui->def_disp_win.bottom_offset = get_ue_golomb(gb) * 2;
 
         if (s->strict_def_disp_win &&
             s->avctx->flags2 & CODEC_FLAG2_IGNORE_CROP) {
