@@ -398,7 +398,8 @@ static void decode_vui(HEVCContext *s, HEVCSPS *sps)
         vui->def_disp_win.top_offset    = get_ue_golomb(gb);
         vui->def_disp_win.bottom_offset = get_ue_golomb(gb);
 
-        if (s->avctx->flags2 & CODEC_FLAG2_IGNORE_CROP) {
+        if (s->strict_def_disp_win &&
+            s->avctx->flags2 & CODEC_FLAG2_IGNORE_CROP) {
             av_log(s->avctx, AV_LOG_DEBUG,
                    "discarding vui default display window, "
                    "original values are l:%u r:%u t:%u b:%u\n",
