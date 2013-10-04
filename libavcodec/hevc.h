@@ -426,6 +426,7 @@ typedef struct HEVCSPS {
 
     ///< display surface size
     int output_width, output_height;
+    HEVCWindow output_window;
 
     ///< coded frame dimension in various units
     int full_width;

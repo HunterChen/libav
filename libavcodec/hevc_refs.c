@@ -162,7 +162,7 @@ int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc)
 
     ref->flags          = HEVC_FRAME_FLAG_OUTPUT | HEVC_FRAME_FLAG_SHORT_REF;
     ref->sequence       = s->seq_decode;
-    ref->window         = s->sps->pic_conf_win;
+    ref->window         = s->sps->output_window;
 
     return 0;
 }

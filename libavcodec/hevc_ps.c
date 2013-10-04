@@ -610,6 +610,7 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
             sps->pic_conf_win.top_offset    =
             sps->pic_conf_win.bottom_offset = 0;
         }
+        sps->output_window = sps->pic_conf_win;
     }
 
     sps->bit_depth   = get_ue_golomb(gb) + 8;
@@ -771,32 +772,31 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
         decode_vui(s, sps);
     skip_bits1(gb); // sps_extension_flag
 
-    /* handle cropping */
     if (s->strict_def_disp_win) {
-        sps->pic_conf_win.left_offset   += sps->vui.def_disp_win.left_offset;
-        sps->pic_conf_win.right_offset  += sps->vui.def_disp_win.right_offset;
-        sps->pic_conf_win.top_offset    += sps->vui.def_disp_win.top_offset;
-        sps->pic_conf_win.bottom_offset += sps->vui.def_disp_win.bottom_offset;
+        sps->output_window.left_offset   += sps->vui.def_disp_win.left_offset;
+        sps->output_window.right_offset  += sps->vui.def_disp_win.right_offset;
+        sps->output_window.top_offset    += sps->vui.def_disp_win.top_offset;
+        sps->output_window.bottom_offset += sps->vui.def_disp_win.bottom_offset;
     }
-    if (sps->pic_conf_win.left_offset & (0x1F >> (sps->pixel_shift)) &&
+    if (sps->output_window.left_offset & (0x1F >> (sps->pixel_shift)) &&
         !(s->avctx->flags & CODEC_FLAG_UNALIGNED)) {
-        sps->pic_conf_win.left_offset &= ~(0x1F >> (sps->pixel_shift));
-        av_log(s->avctx, AV_LOG_WARNING, "Reducing left conformance window to %d "
+        sps->output_window.left_offset &= ~(0x1F >> (sps->pixel_shift));
+        av_log(s->avctx, AV_LOG_WARNING, "Reducing left output window to %d "
                "chroma samples to preserve alignment.\n",
-               sps->pic_conf_win.left_offset);
+               sps->output_window.left_offset);
     }
     sps->output_width  = sps->full_width -
-                         (sps->pic_conf_win.left_offset + sps->pic_conf_win.right_offset);
+                         (sps->output_window.left_offset + sps->output_window.right_offset);
     sps->output_height = sps->full_height -
-                         (sps->pic_conf_win.top_offset + sps->pic_conf_win.bottom_offset);
+                         (sps->output_window.top_offset + sps->output_window.bottom_offset);
     if (sps->output_width <= 0 || sps->output_height <= 0) {
-        av_log(s->avctx, AV_LOG_WARNING, "Invalid cropped frame dimensions: %dx%d.\n",
+        av_log(s->avctx, AV_LOG_WARNING, "Invalid visible frame dimensions: %dx%d.\n",
                sps->output_width, sps->output_height);
         if (s->avctx->err_recognition & AV_EF_EXPLODE) {
             ret = AVERROR_INVALIDDATA;
             goto err;
         }
-        av_log(s->avctx, AV_LOG_WARNING, "Discarding cropping information.\n");
+        av_log(s->avctx, AV_LOG_WARNING, "Displaying the whole video surface.\n");
         sps->pic_conf_win.left_offset   =
         sps->pic_conf_win.right_offset  =
         sps->pic_conf_win.top_offset    =
