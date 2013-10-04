@@ -528,7 +528,6 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
     int sps_id = 0;
     int log2_diff_max_min_transform_block_size;
     int bit_depth_chroma, start, vui_present, sublayer_ordering_info;
-    int max_sublayers;
     int i;
 
     HEVCSPS *sps;
@@ -549,16 +548,16 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
         goto err;
     }
 
-    max_sublayers = get_bits(gb, 3) + 1;
-    if (max_sublayers > MAX_SUB_LAYERS) {
+    sps->max_sub_layers = get_bits(gb, 3) + 1;
+    if (sps->max_sub_layers > MAX_SUB_LAYERS) {
         av_log(s->avctx, AV_LOG_ERROR, "vps_max_sub_layers out of range: %d\n",
-               max_sublayers);
+               sps->max_sub_layers);
         ret = AVERROR_INVALIDDATA;
         goto err;
     }
 
     skip_bits1(gb); // temporal_id_nesting_flag
-    if (decode_profile_tier_level(&s->HEVClc, &sps->ptl, max_sublayers) < 0) {
+    if (decode_profile_tier_level(&s->HEVClc, &sps->ptl, sps->max_sub_layers) < 0) {
         av_log(s->avctx, AV_LOG_ERROR, "error decoding profile tier level\n");
         ret = AVERROR_INVALIDDATA;
         goto err;
@@ -662,8 +661,8 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
     }
 
     sublayer_ordering_info = get_bits1(gb);
-    start = sublayer_ordering_info ? 0 : max_sublayers - 1;
-    for (i = start; i < max_sublayers; i++) {
+    start = sublayer_ordering_info ? 0 : sps->max_sub_layers - 1;
+    for (i = start; i < sps->max_sub_layers; i++) {
         sps->temporal_layer[i].max_dec_pic_buffering = get_ue_golomb(gb);
         sps->temporal_layer[i].num_reorder_pics      = get_ue_golomb(gb);
         sps->temporal_layer[i].max_latency_increase  = get_ue_golomb(gb);
