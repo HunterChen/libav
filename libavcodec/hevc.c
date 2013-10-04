@@ -412,10 +412,11 @@ static int hls_slice_header(HEVCContext *s)
 
     // Coded parameters
     sh->first_slice_in_pic_flag = get_bits1(gb);
-    if ((s->nal_unit_type == NAL_IDR_W_RADL || s->nal_unit_type == NAL_IDR_N_LP ||
-         s->nal_unit_type == NAL_BLA_W_LP ||
-         s->nal_unit_type == NAL_BLA_N_LP ||
-         s->nal_unit_type == NAL_BLA_N_LP) &&
+    if ((s->nal_unit_type == NAL_IDR_W_RADL ||
+         s->nal_unit_type == NAL_IDR_N_LP   ||
+         s->nal_unit_type == NAL_BLA_W_LP   ||
+         s->nal_unit_type == NAL_BLA_N_LP   ||
+         s->nal_unit_type == NAL_BLA_W_RADL) &&
          sh->first_slice_in_pic_flag) {
         s->seq_decode = (s->seq_decode + 1) & 0xff;
         s->max_ra = INT_MAX;
@@ -1680,7 +1681,8 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
         }
     }
 
-    ff_hevc_wait_neighbour_ctb(s, &current_mv, x0, y0);
+    if (ff_hevc_wait_neighbour_ctb(s, &current_mv, x0, y0) < 0)
+        return;
 
     if (current_mv.pred_flag == 1) {
         DECLARE_ALIGNED(16, int16_t, tmp [MAX_PB_SIZE * MAX_PB_SIZE]);
@@ -2292,7 +2294,8 @@ static int hls_decode_entry(AVCodecContext *avctxt, void *isFilterThread)
 
         hls_sao_param(s, x_ctb >> s->sps->log2_ctb_size, y_ctb >> s->sps->log2_ctb_size);
 
-        ff_hevc_wait_collocated_ctb(s, x_ctb, y_ctb);
+        if(ff_hevc_wait_collocated_ctb(s, x_ctb, y_ctb)<0)
+            return -1;
 
         s->deblock[ctb_addr_rs].disable     = s->sh.disable_deblocking_filter_flag;
         s->deblock[ctb_addr_rs].beta_offset = s->sh.beta_offset;
@@ -2732,7 +2735,7 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
             if (s->nal_unit_type == NAL_CRA_NUT ||
                 s->nal_unit_type == NAL_BLA_W_LP ||
                 s->nal_unit_type == NAL_BLA_N_LP ||
-                s->nal_unit_type == NAL_BLA_N_LP) {
+                s->nal_unit_type == NAL_BLA_W_RADL) {
                 s->max_ra = s->poc;
             } else {
                 if (s->nal_unit_type == NAL_IDR_W_RADL || s->nal_unit_type == NAL_IDR_N_LP)
@@ -2743,7 +2746,8 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
         if ((s->nal_unit_type == NAL_RASL_R || s->nal_unit_type == NAL_RASL_N) &&
             s->poc <= s->max_ra) {
             s->is_decoded = 0;
-            break;
+            av_log(s->avctx, AV_LOG_DEBUG, "RAP with leading pictures skipped\n");
+            return 0;
         } else {
             if (s->nal_unit_type == NAL_RASL_R && s->poc > s->max_ra)
                 s->max_ra = INT_MIN;
@@ -2780,7 +2784,8 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
                     return ret;
             }
         } else {
-            ff_hevc_set_ref_pic_list(s, s->DPB[ff_hevc_find_next_ref(s, s->poc)]);
+            ff_hevc_set_ref_pic_list(s, s->DPB[s->curr_dpb_idx]);
+            ff_hevc_thread_cnt_ref(s, 1);
         }
         if (!lc->edge_emu_buffer)
             lc->edge_emu_buffer = av_malloc((MAX_PB_SIZE + 7) * s->frame->linesize[0]);
@@ -2797,9 +2802,8 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
             if((s->pps->transquant_bypass_enable_flag || (s->sps->pcm.loop_filter_disable_flag && s->sps->pcm_enabled_flag)) && s->sps->sample_adaptive_offset_enabled_flag) {
                 restore_tqb_pixels(s);
             }
-            s->ref->is_decoded = 1;
-            ff_hevc_thread_cnt_dec_ref(s);
         }
+        ff_hevc_thread_cnt_ref(s, -1);
 
         if (ctb_addr_ts < 0)
             return ctb_addr_ts;
@@ -3028,15 +3032,12 @@ static void calc_md5(uint8_t *md5, uint8_t* src, int stride, int width, int heig
     av_free(buf);
 }
 
-
-
 static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
                              AVPacket *avpkt)
 {
     int ret;
     HEVCContext *s = avctx->priv_data;
     s->pts = avpkt->pts;
-
 
     if (!avpkt->size) {
         if ((ret = ff_hevc_output_frame(s, data, 1)) < 0)
@@ -3051,8 +3052,15 @@ static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
     *got_output = ret;
 
     if ((ret = decode_nal_units(s, avpkt->data, avpkt->size)) < 0) {
+        av_log(s->avctx, AV_LOG_DEBUG, "frame not decoded %d \n", s->poc);
+
+        if (!s->disable_au)
+            s->ref->is_decoded = 1;
+
         return ret;
     }
+    if (!s->disable_au)
+        s->ref->is_decoded = 1;
 
     if (s->decode_checksum_sei && s->is_decoded) {
         AVFrame *frame = s->ref->frame;
