@@ -33,20 +33,20 @@ int ff_hevc_find_ref_idx(HEVCContext *s, int poc)
         HEVCFrame *ref = s->DPB[i];
         if (ref->frame->buf[0] && (ref->sequence == s->seq_decode)) {
             if ((ref->flags & HEVC_FRAME_FLAG_LONG_REF) != 0 && (ref->poc & LtMask) == poc)
-	            return i;
-	    }
+                return i;
+        }
     }
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         HEVCFrame *ref = s->DPB[i];
         if (ref->frame->buf[0] && (ref->sequence == s->seq_decode)) {
             if ((ref->flags & HEVC_FRAME_FLAG_SHORT_REF) != 0 && (ref->poc == poc || (ref->poc & LtMask) == poc))
-	            return i;
-	    }
+                return i;
+        }
     }
 
     av_log(s->avctx, AV_LOG_ERROR,
-           "Could not find ref with POC %d\n", poc);
+            "Could not find ref with POC %d\n", poc);
     return 0;
 }
 
@@ -70,7 +70,7 @@ static void free_refPicListTab(HEVCContext *s, HEVCFrame *ref)
     ref->refPicList = NULL;
 }
 
-void ff_hevc_unref_frame(HEVCContext *s, HEVCFrame *frame, int flags)
+static void unref_frame(HEVCContext *s, HEVCFrame *frame, int flags)
 {
     frame->flags &= ~flags;
     if (!frame->flags) {
@@ -93,29 +93,9 @@ static void update_refs(HEVCContext *s)
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         HEVCFrame *frame = s->DPB[i];
         if (frame->frame->buf[0] && !used[i])
-            ff_hevc_unref_frame(s, frame, HEVC_FRAME_FLAG_SHORT_REF |
-                                          HEVC_FRAME_FLAG_LONG_REF);
+            unref_frame(s, frame, HEVC_FRAME_FLAG_SHORT_REF |
+                    HEVC_FRAME_FLAG_LONG_REF);
     }
-}
-
-int ff_hevc_find_next_ref(HEVCContext *s, int poc)
-{
-    int i;
-
-    if (!s->sh.first_slice_in_pic_flag)
-        return ff_hevc_find_ref_idx(s, poc);
-
-    update_refs(s);
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        HEVCFrame *ref = s->DPB[i];
-        if (!ref->frame->buf[0]) {
-            return i;
-        }
-    }
-    av_log(s->avctx, AV_LOG_ERROR,
-           "could not free room for POC %d\n", poc);
-    return -1;
 }
 
 static void malloc_refPicListTab(HEVCContext *s, HEVCFrame *ref)
@@ -148,19 +128,26 @@ void ff_hevc_clear_refs(HEVCContext *s)
 {
     int i;
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++)
-        ff_hevc_unref_frame(s, s->DPB[i], HEVC_FRAME_FLAG_SHORT_REF | HEVC_FRAME_FLAG_LONG_REF);
+        unref_frame(s, s->DPB[i], HEVC_FRAME_FLAG_SHORT_REF | HEVC_FRAME_FLAG_LONG_REF);
 }
 
 void ff_hevc_flush_dpb(HEVCContext *s)
 {
     int i;
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++)
-        ff_hevc_unref_frame(s, s->DPB[i], ~0);
+        unref_frame(s, s->DPB[i], ~0);
 }
 
 int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc)
 {
     int i;
+    if (s->disable_au)
+        for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
+            HEVCFrame *ref = s->DPB[i];
+            if (ref->flags == HEVC_FRAME_FLAG_OUTPUT && !ref->is_decoded) {
+                ref->is_decoded = 1;
+            }
+        }
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         HEVCFrame *ref = s->DPB[i];
         if (!ref->frame->buf[0]) {
