@@ -248,8 +248,8 @@ static void pic_arrays_free(HEVCContext *s)
 static int pic_arrays_init(HEVCContext *s)
 {
     int log2_min_cb_size     = s->sps->log2_min_coding_block_size;
-    int width                = s->sps->width;
-    int height               = s->sps->height;
+    int width                = s->sps->full_width;
+    int height               = s->sps->full_height;
     int pic_size             = width * height;
     int pic_size_in_ctb      = ((width  >> log2_min_cb_size) + 1) *
                                ((height >> log2_min_cb_size) + 1);
@@ -487,11 +487,11 @@ static int hls_slice_header(HEVCContext *s)
             return AVERROR(ENOMEM);
         }
 
-        s->width  = s->sps->width;
-        s->height = s->sps->height;
+        s->width  = s->sps->full_width;
+        s->height = s->sps->full_height;
 
-        s->avctx->coded_width  = s->sps->width;
-        s->avctx->coded_height = s->sps->height;
+        s->avctx->coded_width  = s->sps->full_width;
+        s->avctx->coded_height = s->sps->full_height;
         s->avctx->width        = s->sps->output_width;
         s->avctx->height       = s->sps->output_height;
         s->avctx->pix_fmt      = s->sps->pix_fmt;
@@ -1248,9 +1248,9 @@ static void set_deblocking_bypass(HEVCContext *s, int x0, int y0, int log2_cb_si
     int cb_size = 1 << log2_cb_size;
     int log2_min_pu_size = s->sps->log2_min_pu_size;
 
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
-    int x_end = FFMIN(x0 + cb_size, s->sps->width);
-    int y_end = FFMIN(y0 + cb_size, s->sps->height);
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
+    int x_end = FFMIN(x0 + cb_size, s->sps->full_width);
+    int y_end = FFMIN(y0 + cb_size, s->sps->full_height);
     int i, j;
 
     for (j = (y0 >> log2_min_pu_size); j < (y_end >> log2_min_pu_size); j++)
@@ -1326,7 +1326,7 @@ static void hls_transform_tree(HEVCContext *s, int x0, int y0, int xBase, int yB
     } else {
         int min_tu_size = 1 << s->sps->log2_min_transform_block_size;
         int log2_min_tu_size = s->sps->log2_min_transform_block_size;
-        int pic_width_in_min_tu = s->sps->width >> log2_min_tu_size;
+        int pic_width_in_min_tu = s->sps->full_width >> log2_min_tu_size;
         int i, j;
 
         if (lc->cu.pred_mode == MODE_INTRA || trafo_depth != 0 ||
@@ -1430,8 +1430,8 @@ static void luma_mc(HEVCContext *s, int16_t *dst, ptrdiff_t dststride, AVFrame *
     HEVCLocalContext *lc = &s->HEVClc;
     uint8_t *src = ref->data[0];
     ptrdiff_t srcstride = ref->linesize[0];
-    int pic_width = s->sps->width;
-    int pic_height = s->sps->height;
+    int pic_width = s->sps->full_width;
+    int pic_height = s->sps->full_height;
 
     int mx = mv->x & 3;
     int my = mv->y & 3;
@@ -1478,8 +1478,8 @@ static void chroma_mc(HEVCContext *s, int16_t *dst1, int16_t *dst2, ptrdiff_t ds
     uint8_t *src2 = ref->data[2];
     ptrdiff_t src1stride = ref->linesize[1];
     ptrdiff_t src2stride = ref->linesize[2];
-    int pic_width  = s->sps->width >> 1;
-    int pic_height = s->sps->height >> 1;
+    int pic_width  = s->sps->full_width >> 1;
+    int pic_height = s->sps->full_height >> 1;
 
     int mx = mv->x & 7;
     int my = mv->y & 7;
@@ -1528,7 +1528,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
     enum InterPredIdc inter_pred_idc = PRED_L0;
     struct MvField current_mv = {{{ 0 }}};
 
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
 
     MvField *tab_mvf = s->ref->tab_mvf;
     RefPicList  *refPicList = s->ref->refPicList;
@@ -1539,7 +1539,7 @@ static void hls_prediction_unit(HEVCContext *s, int x0, int y0, int nPbW, int nP
     uint8_t *dst1 = POS(1, x0, y0);
     uint8_t *dst2 = POS(2, x0, y0);
     int log2_min_cb_size = s->sps->log2_min_coding_block_size;
-    int pic_width_in_ctb = s->sps->width>>log2_min_cb_size;
+    int pic_width_in_ctb = s->sps->full_width >> log2_min_cb_size;
     int x_cb             = x0 >> log2_min_cb_size;
     int y_cb             = y0 >> log2_min_cb_size;
     int ref_idx[2];
@@ -1767,7 +1767,7 @@ static int luma_intra_pred_mode(HEVCContext *s, int x0, int y0, int pu_size,
     HEVCLocalContext *lc = &s->HEVClc;
     int x_pu = x0 >> s->sps->log2_min_pu_size;
     int y_pu = y0 >> s->sps->log2_min_pu_size;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
     int size_in_pus = pu_size >> s->sps->log2_min_pu_size;
     int x0b = x0 & ((1 << s->sps->log2_ctb_size) - 1);
     int y0b = y0 & ((1 << s->sps->log2_ctb_size) - 1);
@@ -1904,7 +1904,7 @@ static void intra_prediction_unit_default_value(HEVCContext *s, int x0, int y0, 
     HEVCLocalContext *lc = &s->HEVClc;
     int pb_size = 1 << log2_cb_size;
     int size_in_pus = pb_size >> s->sps->log2_min_pu_size;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
     MvField *tab_mvf = s->ref->tab_mvf;
     int x_pu = x0 >> s->sps->log2_min_pu_size;
     int y_pu = y0 >> s->sps->log2_min_pu_size;
@@ -1925,7 +1925,7 @@ static int hls_coding_unit(HEVCContext *s, int x0, int y0, int log2_cb_size)
     HEVCLocalContext *lc = &s->HEVClc;
     int log2_min_cb_size = s->sps->log2_min_coding_block_size;
     int length           = cb_size >> log2_min_cb_size;
-    int pic_width_in_ctb = s->sps->width >> log2_min_cb_size;
+    int pic_width_in_ctb = s->sps->full_width >> log2_min_cb_size;
     int x_cb             = x0 >> log2_min_cb_size;
     int y_cb             = y0 >> log2_min_cb_size;
     int x, y;
@@ -2076,8 +2076,8 @@ static int hls_coding_quadtree(HEVCContext *s, int x0, int y0, int log2_cb_size,
     int ret;
 
     lc->ct.depth = cb_depth;
-    if ((x0 + (1 << log2_cb_size) <= s->sps->width) &&
-        (y0 + (1 << log2_cb_size) <= s->sps->height) &&
+    if ((x0 + (1 << log2_cb_size) <= s->sps->full_width) &&
+        (y0 + (1 << log2_cb_size) <= s->sps->full_height) &&
         log2_cb_size > s->sps->log2_min_coding_block_size) {
         SAMPLE(s->split_cu_flag, x0, y0) =
             ff_hevc_split_coding_unit_flag_decode(s, cb_depth, x0, y0);
@@ -2101,17 +2101,17 @@ static int hls_coding_quadtree(HEVCContext *s, int x0, int y0, int log2_cb_size,
         if (more_data < 0)
             return more_data;
 
-        if (more_data && x1 < s->sps->width)
+        if (more_data && x1 < s->sps->full_width)
             more_data = hls_coding_quadtree(s, x1, y0, log2_cb_size - 1, cb_depth + 1);
-        if (more_data && y1 < s->sps->height)
+        if (more_data && y1 < s->sps->full_height)
             more_data = hls_coding_quadtree(s, x0, y1, log2_cb_size - 1, cb_depth + 1);
-        if (more_data && x1 < s->sps->width &&
-            y1 < s->sps->height) {
+        if (more_data && x1 < s->sps->full_width &&
+            y1 < s->sps->full_height) {
             return hls_coding_quadtree(s, x1, y1, log2_cb_size - 1, cb_depth + 1);
         }
         if (more_data)
-            return ((x1 + cb_size) < s->sps->width ||
-                    (y1 + cb_size) < s->sps->height);
+            return ((x1 + cb_size) < s->sps->full_width ||
+                    (y1 + cb_size) < s->sps->full_height);
         else
             return 0;
     } else {
@@ -2120,10 +2120,10 @@ static int hls_coding_quadtree(HEVCContext *s, int x0, int y0, int log2_cb_size,
             return ret;
         if ((!((x0 + (1 << log2_cb_size)) %
                (1 << (s->sps->log2_ctb_size))) ||
-             (x0 + (1 << log2_cb_size) >= s->sps->width)) &&
+             (x0 + (1 << log2_cb_size) >= s->sps->full_width)) &&
             (!((y0 + (1 << log2_cb_size)) %
                (1 << (s->sps->log2_ctb_size))) ||
-             (y0 + (1 << log2_cb_size) >= s->sps->height))) {
+             (y0 + (1 << log2_cb_size) >= s->sps->full_height))) {
             int end_of_slice_flag = ff_hevc_end_of_slice_flag_decode(s);
             return !end_of_slice_flag;
         } else {
@@ -2156,7 +2156,7 @@ static void hls_decode_neighbour(HEVCContext *s, int x_ctb, int y_ctb, int ctb_a
     if (s->pps->entropy_coding_sync_enabled_flag) {
         if (x_ctb == 0 && (y_ctb & (ctb_size - 1)) == 0)
             lc->first_qp_group = 1;
-        lc->end_of_tiles_x = s->sps->width;
+        lc->end_of_tiles_x = s->sps->full_width;
     } else if (s->pps->tiles_enabled_flag) {
         if (ctb_addr_ts && s->pps->tile_id[ctb_addr_ts] != s->pps->tile_id[ctb_addr_ts - 1]) {
             int idxX = s->pps->col_idxX[x_ctb >> s->sps->log2_ctb_size];
@@ -2165,10 +2165,10 @@ static void hls_decode_neighbour(HEVCContext *s, int x_ctb, int y_ctb, int ctb_a
             lc->first_qp_group   = 1;
         }
     } else {
-        lc->end_of_tiles_x = s->sps->width;
+        lc->end_of_tiles_x = s->sps->full_width;
     }
 
-    lc->end_of_tiles_y = FFMIN(y_ctb + ctb_size, s->sps->height);
+    lc->end_of_tiles_y = FFMIN(y_ctb + ctb_size, s->sps->full_height);
 
     if (s->pps->tiles_enabled_flag) {
         tile_left_boundary = ((x_ctb > 0) &&
@@ -2204,8 +2204,8 @@ static int hls_slice_data(HEVCContext *s)
     while (more_data && ctb_addr_ts < s->sps->ctb_size) {
         int ctb_addr_rs = s->pps->ctb_addr_ts_to_rs[ctb_addr_ts];
 
-        x_ctb = (ctb_addr_rs % ((s->sps->width + (ctb_size - 1)) >> s->sps->log2_ctb_size)) << s->sps->log2_ctb_size;
-        y_ctb = (ctb_addr_rs / ((s->sps->width + (ctb_size - 1)) >> s->sps->log2_ctb_size)) << s->sps->log2_ctb_size;
+        x_ctb = (ctb_addr_rs % ((s->sps->full_width + (ctb_size - 1)) >> s->sps->log2_ctb_size)) << s->sps->log2_ctb_size;
+        y_ctb = (ctb_addr_rs / ((s->sps->full_width + (ctb_size - 1)) >> s->sps->log2_ctb_size)) << s->sps->log2_ctb_size;
         hls_decode_neighbour(s, x_ctb, y_ctb, ctb_addr_ts);
 
         ff_hevc_cabac_init(s, ctb_addr_ts);
@@ -2226,8 +2226,8 @@ static int hls_slice_data(HEVCContext *s)
         ff_hevc_hls_filters(s, x_ctb, y_ctb, ctb_size);
     }
 
-    if (x_ctb + ctb_size >= s->sps->width &&
-        y_ctb + ctb_size >= s->sps->height)
+    if (x_ctb + ctb_size >= s->sps->full_width &&
+        y_ctb + ctb_size >= s->sps->full_height)
         ff_hevc_hls_filter(s, x_ctb, y_ctb);
 
     return ctb_addr_ts;
@@ -2261,8 +2261,8 @@ static int hls_nal_unit(HEVCContext *s)
 
 static void restore_tqb_pixels(HEVCContext *s)
 {
-    int pic_width_in_min_pu  = s->sps->width >> s->sps->log2_min_pu_size;
-    int pic_height_in_min_pu = s->sps->height >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu  = s->sps->full_width >> s->sps->log2_min_pu_size;
+    int pic_height_in_min_pu = s->sps->full_height >> s->sps->log2_min_pu_size;
     int min_pu_size = 1 << s->sps->log2_min_pu_size;
     int x, y, c_idx;
 
@@ -2291,10 +2291,10 @@ static void restore_tqb_pixels(HEVCContext *s)
 static int hevc_frame_start(HEVCContext *s)
 {
     HEVCLocalContext *lc     = &s->HEVClc;
-    int pic_width_in_min_pu  = s->sps->width  >> s->sps->log2_min_pu_size;
-    int pic_height_in_min_pu = s->sps->height >> s->sps->log2_min_pu_size;
-    int pic_width_in_min_tu  = s->sps->width  >> s->sps->log2_min_transform_block_size;
-    int pic_height_in_min_tu = s->sps->height >> s->sps->log2_min_transform_block_size;
+    int pic_width_in_min_pu  = s->sps->full_width  >> s->sps->log2_min_pu_size;
+    int pic_height_in_min_pu = s->sps->full_height >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_tu  = s->sps->full_width  >> s->sps->log2_min_transform_block_size;
+    int pic_height_in_min_tu = s->sps->full_height >> s->sps->log2_min_transform_block_size;
     int ret;
 
     memset(s->horizontal_bs, 0, 2 * s->bs_width * (s->bs_height + 1));

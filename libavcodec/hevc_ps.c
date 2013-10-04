@@ -580,10 +580,11 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
     if (sps->chroma_format_idc == 3)
         sps->separate_colour_plane_flag = get_bits1(gb);
 
-    sps->width  = get_ue_golomb(gb);
-    sps->height = get_ue_golomb(gb);
-    if ((ret = av_image_check_size(sps->width,
-                                   sps->height, 0, s->avctx)) < 0)
+    sps->full_width  = get_ue_golomb(gb);
+    sps->full_height = get_ue_golomb(gb);
+    if ((ret = av_image_check_size(sps->full_width,
+                                   sps->full_height,
+                                   0, s->avctx)) < 0)
         goto err;
 
     if (get_bits1(gb)) { // pic_conformance_flag
@@ -788,9 +789,9 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
                "chroma samples to preserve alignment.\n",
                sps->pic_conf_win.left_offset);
     }
-    sps->output_width  = sps->width -
+    sps->output_width  = sps->full_width -
                          (sps->pic_conf_win.left_offset + sps->pic_conf_win.right_offset);
-    sps->output_height = sps->height -
+    sps->output_height = sps->full_height -
                          (sps->pic_conf_win.top_offset + sps->pic_conf_win.bottom_offset);
     if (sps->output_width <= 0 || sps->output_height <= 0) {
         av_log(s->avctx, AV_LOG_WARNING, "Invalid cropped frame dimensions: %dx%d.\n",
@@ -804,28 +805,28 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
         sps->pic_conf_win.right_offset  =
         sps->pic_conf_win.top_offset    =
         sps->pic_conf_win.bottom_offset = 0;
-        sps->output_width  = sps->width;
-        sps->output_height = sps->height;
+        sps->output_width  = sps->full_width;
+        sps->output_height = sps->full_height;
     }
 
     // Inferred parameters
     sps->log2_ctb_size     = sps->log2_min_coding_block_size
                              + sps->log2_diff_max_min_coding_block_size;
 
-    sps->ctb_width         = (sps->width  + (1 << sps->log2_ctb_size) - 1) >> sps->log2_ctb_size;
-    sps->ctb_height        = (sps->height + (1 << sps->log2_ctb_size) - 1) >> sps->log2_ctb_size;
+    sps->ctb_width         = (sps->full_width  + (1 << sps->log2_ctb_size) - 1) >> sps->log2_ctb_size;
+    sps->ctb_height        = (sps->full_height + (1 << sps->log2_ctb_size) - 1) >> sps->log2_ctb_size;
     sps->ctb_size          = sps->ctb_width * sps->ctb_height;
 
-    sps->min_cb_width      = sps->width  >> sps->log2_min_coding_block_size;
-    sps->min_cb_height     = sps->height >> sps->log2_min_coding_block_size;
-    sps->min_tb_width      = sps->width  >> sps->log2_min_transform_block_size;
-    sps->min_tb_height     = sps->height >> sps->log2_min_transform_block_size;
+    sps->min_cb_width      = sps->full_width  >> sps->log2_min_coding_block_size;
+    sps->min_cb_height     = sps->full_height >> sps->log2_min_coding_block_size;
+    sps->min_tb_width      = sps->full_width  >> sps->log2_min_transform_block_size;
+    sps->min_tb_height     = sps->full_height >> sps->log2_min_transform_block_size;
     sps->log2_min_pu_size  = sps->log2_min_coding_block_size - 1;
 
     sps->qp_bd_offset      = 6 * (sps->bit_depth - 8);
 
-    if (sps->width  & ((1 << sps->log2_min_coding_block_size) - 1) ||
-        sps->height & ((1 << sps->log2_min_coding_block_size) - 1)) {
+    if (sps->full_width  & ((1 << sps->log2_min_coding_block_size) - 1) ||
+        sps->full_height & ((1 << sps->log2_min_coding_block_size) - 1)) {
         av_log(s->avctx, AV_LOG_ERROR, "Invalid coded frame dimensions.\n");
         goto err;
     }
@@ -854,7 +855,7 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
      * all PPSes that depend on it */
 #define DIFF(x) (sps->x != ((HEVCSPS*)s->sps_list[sps_id]->data)->x)
     if (s->sps_list[sps_id] &&
-        (DIFF(width) || DIFF(height) || DIFF(chroma_format_idc) ||
+        (DIFF(full_width) || DIFF(full_height) || DIFF(chroma_format_idc) ||
          DIFF(bit_depth) || DIFF(ctb_width) || DIFF(ctb_height))) {
         for (i = 0; i < FF_ARRAY_ELEMS(s->pps_list); i++) {
             if (s->pps_list[i] && ((HEVCPPS*)s->pps_list[i]->data)->sps_id == sps_id)
@@ -869,7 +870,7 @@ int ff_hevc_decode_nal_sps(HEVCContext *s)
     if (s->avctx->debug & FF_DEBUG_BITSTREAM) {
         av_log(s->avctx, AV_LOG_DEBUG, "Parsed SPS: id %d; coded wxh: %dx%d; "
                "cropped wxh: %dx%d; pix_fmt: %s.\n",
-               sps_id, sps->width, sps->height,
+               sps_id, sps->full_width, sps->full_height,
                sps->output_width, sps->output_height,
                av_get_pix_fmt_name(sps->pix_fmt));
     }
@@ -1001,14 +1002,14 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
         pps->num_tile_columns     = get_ue_golomb(gb) + 1;
         pps->num_tile_rows        = get_ue_golomb(gb) + 1;
         if (pps->num_tile_columns == 0 ||
-            pps->num_tile_columns >= sps->width) {
+            pps->num_tile_columns >= sps->full_width) {
             av_log(s->avctx, AV_LOG_ERROR, "num_tile_columns_minus1 out of range: %d\n",
                    pps->num_tile_columns - 1);
             ret = AVERROR_INVALIDDATA;
             goto err;
         }
         if (pps->num_tile_rows == 0 ||
-            pps->num_tile_rows >= sps->height) {
+            pps->num_tile_rows >= sps->full_height) {
             av_log(s->avctx, AV_LOG_ERROR, "num_tile_rows_minus1 out of range: %d\n",
                    pps->num_tile_rows - 1);
             ret = AVERROR_INVALIDDATA;

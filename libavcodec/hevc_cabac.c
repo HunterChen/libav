@@ -478,7 +478,7 @@ int ff_hevc_cu_transquant_bypass_flag_decode(HEVCContext *s)
 
 int ff_hevc_skip_flag_decode(HEVCContext *s, int x0, int y0, int x_cb, int y_cb)
 {
-    int pic_width_in_ctb = s->sps->width >> s->sps->log2_min_coding_block_size;
+    int pic_width_in_ctb = s->sps->full_width >> s->sps->log2_min_coding_block_size;
     int inc = 0;
     int x0b = x0 & ((1 << s->sps->log2_ctb_size) - 1);
     int y0b = y0 & ((1 << s->sps->log2_ctb_size) - 1);
