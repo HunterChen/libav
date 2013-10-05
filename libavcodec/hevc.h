@@ -71,7 +71,7 @@
 /**
  * Value of the luma sample at position (x, y) in the 2D array tab.
  */
-#define SAMPLE(tab, x, y) ((tab)[(y) * s->sps->width + (x)])
+#define SAMPLE(tab, x, y) ((tab)[(y) * s->sps->full_width + (x)])
 #define SAMPLE_CTB(tab, x, y) ((tab)[(y) * pic_width_in_ctb + (x)])
 #define SAMPLE_CBF(tab, x, y) ((tab)[((y) & ((1<<log2_trafo_size)-1)) * MAX_CU_SIZE + ((x) & ((1<<log2_trafo_size)-1))])
 
@@ -373,9 +373,6 @@ typedef struct HEVCSPS {
     int chroma_format_idc;
     uint8_t separate_colour_plane_flag;
 
-    ///< output (i.e. cropped) values
-    int output_width, output_height;
-
     HEVCWindow pic_conf_win;
 
     int bit_depth;
@@ -428,9 +425,13 @@ typedef struct HEVCSPS {
     int max_transform_hierarchy_depth_inter;
     int max_transform_hierarchy_depth_intra;
 
+    ///< display surface size
+    int output_width, output_height;
+    HEVCWindow output_window;
+
     ///< coded frame dimension in various units
-    int width;
-    int height;
+    int full_width;
+    int full_height;
     int ctb_width;
     int ctb_height;
     int ctb_size;

@@ -70,8 +70,8 @@ static int z_scan_block_avail(HEVCContext *s, int xCurr, int yCurr,
     int N;
 
     if ((xN < 0) || (yN < 0) ||
-        (xN >= s->sps->width) ||
-        (yN >= s->sps->height))
+        (xN >= s->sps->full_width) ||
+        (yN >= s->sps->full_height))
         return 0;
 
     N = MIN_TB_ADDR_ZS(xN >> s->sps->log2_min_transform_block_size,
@@ -258,7 +258,7 @@ static int temporal_luma_motion_vector(HEVCContext *s, int x0, int y0,
     int xPCtr, yPCtr;
     int xPCtr_pu;
     int yPCtr_pu;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
     int availableFlagLXCol = 0;
     int colPic;
 
@@ -275,8 +275,8 @@ static int temporal_luma_motion_vector(HEVCContext *s, int x0, int y0,
 
     if (tab_mvf &&
         y0 >> s->sps->log2_ctb_size == yPRb >> s->sps->log2_ctb_size &&
-        yPRb < s->sps->height &&
-        xPRb < s->sps->width) {
+        yPRb < s->sps->full_height &&
+        xPRb < s->sps->full_width) {
         xPRb = ((xPRb >> 4) << 4);
         yPRb = ((yPRb >> 4) << 4);
         xPRb_pu = xPRb >> s->sps->log2_min_pu_size;
@@ -341,7 +341,7 @@ static void derive_spatial_merge_candidates(HEVCContext *s, int x0, int y0,
     int xA1 = x0 - 1;
     int yA1 = y0 + nPbH - 1;
     int is_available_a1;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
 
     int check_MER = 1;
     int check_MER_1 = 1;
@@ -749,7 +749,7 @@ static int mv_mp_mode_mx(HEVCContext *s, int x, int y, int pred_flag_index,
                          Mv *mv, int ref_idx_curr, int ref_idx)
 {
     MvField *tab_mvf = s->ref->tab_mvf;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
 
     RefPicList *refPicList = s->ref->refPicList;
 
@@ -766,7 +766,7 @@ static int mv_mp_mode_mx_lt(HEVCContext *s, int x, int y, int pred_flag_index,
                             Mv *mv, int ref_idx_curr, int ref_idx)
 {
     MvField *tab_mvf = s->ref->tab_mvf;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
 
     RefPicList *refPicList = s->ref->refPicList;
     int currIsLongTerm = refPicList[ref_idx_curr].isLongTerm[ref_idx];
@@ -801,7 +801,7 @@ void ff_hevc_luma_mv_mvp_mode(HEVCContext *s, int x0, int y0, int nPbW,
     int availableFlagLXB0 = 0;
     int availableFlagLXCol = 0;
     int numMVPCandLX = 0;
-    int pic_width_in_min_pu = s->sps->width >> s->sps->log2_min_pu_size;
+    int pic_width_in_min_pu = s->sps->full_width >> s->sps->log2_min_pu_size;
 
     int xA0, yA0;
     int xA0_pu, yA0_pu;
