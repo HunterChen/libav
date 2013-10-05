@@ -834,6 +834,9 @@ typedef struct HEVCContext {
 
     AVBufferPool *tab_mvf_pool;
     AVBufferPool *rpl_tab_pool;
+    int is_nalff;         ///< this flag is != 0 if bitstream is encapsulated
+                          ///< as a format defined in 14496-15
+    int nal_length_size;  ///< Number of bytes used for nal length (1, 2 or 4)
 } HEVCContext;
 
 int ff_hevc_decode_short_term_rps(HEVCContext *s, ShortTermRPS *rps,
