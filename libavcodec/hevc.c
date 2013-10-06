@@ -2587,14 +2587,13 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
                 buf    += s->nal_length_size;
                 length -= s->nal_length_size;
             } else {
-                if (buf[2] == 0) {
-                    length--;
-                    buf++;
-                    continue;
+                /* search start code */
+                while (buf[0] != 0 || buf[1] != 0 || buf[2] != 1) {
+                    ++buf;
+                    --length;
+                    if (length < 4)
+                        return AVERROR_INVALIDDATA;
                 }
-                if (buf[0] != 0 || buf[1] != 0 || buf[2] != 1)
-                    return AVERROR_INVALIDDATA;
-
                 buf    += 3;
                 length -= 3;
             }
