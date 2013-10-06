@@ -2577,29 +2577,27 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
     const uint8_t *nal = NULL;
 
     while (length >= 4) {
-        int extract_length = 0;
+        int extract_length;
 
-        if (s->disable_au == 0) {
-            if (s->is_nalff) {
-                int i;
-                for (i = 0; i < s->nal_length_size; i++)
-                    extract_length = (extract_length << 8) | buf[i];
-                buf    += s->nal_length_size;
-                length -= s->nal_length_size;
-            } else {
-                /* search start code */
-                while (buf[0] != 0 || buf[1] != 0 || buf[2] != 1) {
-                    ++buf;
-                    --length;
-                    if (length < 4)
-                        return AVERROR_INVALIDDATA;
-                }
-                buf    += 3;
-                length -= 3;
+        if (s->is_nalff) {
+            int i;
+            extract_length = 0;
+            for (i = 0; i < s->nal_length_size; i++)
+                extract_length = (extract_length << 8) | buf[i];
+            buf    += s->nal_length_size;
+            length -= s->nal_length_size;
+        } else {
+            /* search start code */
+            while (buf[0] != 0 || buf[1] != 0 || buf[2] != 1) {
+                ++buf;
+                --length;
+                if (length < 4)
+                    return AVERROR_INVALIDDATA;
             }
-        }
-        if (!s->is_nalff || s->disable_au)
+            buf    += 3;
+            length -= 3;
             extract_length = length;
+        }
 
         nal = ff_hevc_extract_rbsp(s, buf, &nal_length, &consumed, extract_length);
         if (!nal)
@@ -2835,8 +2833,6 @@ static void hevc_decode_flush(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(HEVCContext, x)
 #define PAR (AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM)
 static const AVOption options[] = {
-    { "disable-au", "disable read frame AU by AU", OFFSET(disable_au),
-        AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, PAR },
     { "strict-displaywin", "stricly apply default display window size", OFFSET(strict_def_disp_win),
         AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, PAR },
     { NULL },
