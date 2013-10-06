@@ -23,42 +23,33 @@
 
 #include "hevc.h"
 #include "internal.h"
-#include "thread.h"
 
-static void free_rpl_tab(HEVCFrame *frame)
+void ff_hevc_free_refPicListTab(HEVCContext *s, HEVCFrame *ref)
 {
     int j;
-    int ctb_count = frame->ctb_count;
+    int ctb_count = ref->ctb_count;
 
-    if (!frame->rpl_tab)
+    if (!ref->refPicListTab)
         return;
 
-    for (j = ctb_count - 1; j > 0; j--) {
-        if (frame->rpl_tab[j] != frame->rpl_tab[j-1])
-            av_free(frame->rpl_tab[j]);
-        frame->rpl_tab[j] = NULL;
+    for (j = ctb_count-1; j > 0; j--) {
+        if (ref->refPicListTab[j] != ref->refPicListTab[j-1])
+            av_free(ref->refPicListTab[j]);
+        ref->refPicListTab[j] = NULL;
     }
-    if (frame->rpl_tab[0] != NULL) {
-        av_free(frame->rpl_tab[0]);
-        frame->rpl_tab[0] = NULL;
+    if (ref->refPicListTab[0] != NULL) {
+        av_free(ref->refPicListTab[0]);
+        ref->refPicListTab[0] = NULL;
     }
-    frame->refPicList = NULL;
+    ref->refPicList = NULL;
 }
 
 void ff_hevc_unref_frame(HEVCContext *s, HEVCFrame *frame, int flags)
 {
     frame->flags &= ~flags;
     if (!frame->flags) {
-        ff_thread_release_buffer(s->avctx, &frame->tf);
-
-        av_buffer_unref(&frame->tab_mvf_buf);
-        frame->tab_mvf = NULL;
-
-        free_rpl_tab(frame);
-        av_buffer_unref(&frame->rpl_tab_buf);
-        frame->rpl_tab = NULL;
-
-        frame->collocated_ref = NULL;
+        av_frame_unref(frame->frame);
+        ff_hevc_free_refPicListTab(s, frame);
     }
 }
 
@@ -69,10 +60,10 @@ static void malloc_refPicListTab(HEVCContext *s)
     int ctb_count   = ref->ctb_count;
     int ctb_addr_ts = s->pps->ctb_addr_rs_to_ts[s->sh.slice_segment_addr];
 
-    ref->rpl_tab[ctb_addr_ts] = av_mallocz(sizeof(RefPicListTab));
-    for (i = ctb_addr_ts; i < ctb_count - 1; i++)
-        ref->rpl_tab[i + 1] = ref->rpl_tab[i];
-    ref->refPicList = (RefPicList*) ref->rpl_tab[ctb_addr_ts];
+    ref->refPicListTab[ctb_addr_ts] = av_mallocz(sizeof(RefPicListTab));
+    for (i = ctb_addr_ts; i < ctb_count-1; i++)
+        ref->refPicListTab[i+1] = ref->refPicListTab[i];
+    ref->refPicList = (RefPicList*) ref->refPicListTab[ctb_addr_ts];
 }
 
 RefPicList* ff_hevc_get_ref_list(HEVCContext *s, HEVCFrame *ref, int x0, int y0)
@@ -84,7 +75,7 @@ RefPicList* ff_hevc_get_ref_list(HEVCContext *s, HEVCFrame *ref, int x0, int y0)
         int y_cb         = y0 >> s->sps->log2_ctb_size;
         int pic_width_cb = (s->sps->full_width + (1<<s->sps->log2_ctb_size)-1 ) >> s->sps->log2_ctb_size;
         int ctb_addr_ts  = s->pps->ctb_addr_rs_to_ts[y_cb * pic_width_cb + x_cb];
-        return (RefPicList*) ref->rpl_tab[ctb_addr_ts];
+        return (RefPicList*) ref->refPicListTab[ctb_addr_ts];
     }
 }
 
@@ -103,41 +94,8 @@ void ff_hevc_flush_dpb(HEVCContext *s)
         ff_hevc_unref_frame(s, &s->DPB[i], ~0);
 }
 
-static HEVCFrame *alloc_frame(HEVCContext *s)
-{
-    int i, ret;
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        HEVCFrame *frame = &s->DPB[i];
-        if (frame->frame->buf[0])
-            continue;
-
-        ret = ff_thread_get_buffer(s->avctx, &frame->tf, AV_GET_BUFFER_FLAG_REF);
-        if (ret < 0)
-            return NULL;
-
-        frame->tab_mvf_buf = av_buffer_pool_get(s->tab_mvf_pool);
-        if (!frame->tab_mvf_buf)
-            goto fail;
-        frame->tab_mvf = (MvField*)frame->tab_mvf_buf->data;
-
-        frame->rpl_tab_buf = av_buffer_pool_get(s->rpl_tab_pool);
-        if (!frame->rpl_tab_buf)
-            goto fail;
-        frame->rpl_tab   = (RefPicListTab**)frame->rpl_tab_buf->data;
-        frame->ctb_count = s->sps->ctb_width * s->sps->ctb_height;
-
-        return frame;
-fail:
-        ff_hevc_unref_frame(s, frame, ~0);
-        return NULL;
-    }
-    av_log(s->avctx, AV_LOG_ERROR, "Error allocating frame, DPB full.\n");
-    return NULL;
-}
-
 int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc)
 {
-    HEVCFrame *ref;
     int i;
 
     /* check that this POC doesn't already exist */
@@ -152,19 +110,23 @@ int ff_hevc_set_new_ref(HEVCContext *s, AVFrame **frame, int poc)
         }
     }
 
-    ref = alloc_frame(s);
-    if (!ref)
-        return AVERROR(ENOMEM);
+    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
+        HEVCFrame *ref = &s->DPB[i];
+        if (!ref->frame->buf[0]) {
+            *frame              = ref->frame;
+            s->ref              = ref;
+            ref->poc            = poc;
 
-    *frame              = ref->frame;
-    s->ref              = ref;
-    ref->poc            = poc;
-
-    ref->flags          = HEVC_FRAME_FLAG_OUTPUT | HEVC_FRAME_FLAG_SHORT_REF;
-    ref->sequence       = s->seq_decode;
-    ref->window         = s->sps->output_window;
-
-    return 0;
+            ref->flags          = HEVC_FRAME_FLAG_OUTPUT | HEVC_FRAME_FLAG_SHORT_REF;
+            ref->sequence       = s->seq_decode;
+            ref->window         = s->sps->pic_conf_win;
+            ref->collocated_ref = NULL;
+            return ff_get_buffer(s->avctx, *frame, AV_GET_BUFFER_FLAG_REF);
+        }
+    }
+    av_log(s->avctx, AV_LOG_ERROR,
+           "DPB is full, could not add ref with POC %d\n", poc);
+    return AVERROR_INVALIDDATA;
 }
 
 int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)

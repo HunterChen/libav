@@ -23,17 +23,15 @@
 #ifndef AVCODEC_HEVC_H
 #define AVCODEC_HEVC_H
 
-#include "libavutil/buffer.h"
 #include "libavutil/md5.h"
 
 #include "avcodec.h"
 #include "cabac.h"
+#include "internal.h"
+#include "videodsp.h"
 #include "get_bits.h"
 #include "hevcpred.h"
 #include "hevcdsp.h"
-#include "internal.h"
-#include "thread.h"
-#include "videodsp.h"
 
 #define MAX_DPB_SIZE 16 // A.4.1
 #define MAX_REFS 16
@@ -76,8 +74,6 @@
 #define SAMPLE_CBF(tab, x, y) ((tab)[((y) & ((1<<log2_trafo_size)-1)) * MAX_CU_SIZE + ((x) & ((1<<log2_trafo_size)-1))])
 
 #define IS_IDR(s) (s->nal_unit_type == NAL_IDR_W_RADL || s->nal_unit_type == NAL_IDR_N_LP)
-#define IS_BLA(s) (s->nal_unit_type == NAL_BLA_W_RADL || s->nal_unit_type == NAL_BLA_W_LP || \
-                   s->nal_unit_type == NAL_BLA_N_LP)
 
 /**
  * Table 7-3: NAL unit type codes
@@ -446,7 +442,7 @@ typedef struct HEVCSPS {
     int qp_bd_offset;
 } HEVCSPS;
 
-typedef struct HEVCPPS {
+typedef struct PPS {
     int sps_id; ///< seq_parameter_set_id
 
     uint8_t sign_data_hiding_flag;
@@ -512,7 +508,7 @@ typedef struct HEVCPPS {
     int *tile_pos_rs; ///< TilePosRS
     int *min_cb_addr_zs; ///< MinCbAddrZS
     int *min_tb_addr_zs; ///< MinTbAddrZS
-} HEVCPPS;
+} PPS;
 
 typedef struct SliceHeader {
     int pps_id;
@@ -682,11 +678,10 @@ typedef struct DBParams {
 
 typedef struct HEVCFrame {
     AVFrame *frame;
-    ThreadFrame tf;
     int poc;
     MvField *tab_mvf;
     RefPicList *refPicList;
-    RefPicListTab **rpl_tab;
+    RefPicListTab **refPicListTab;
     int ctb_count;
     struct HEVCFrame *collocated_ref;
 
@@ -702,9 +697,6 @@ typedef struct HEVCFrame {
     uint16_t sequence;
 
     HEVCWindow window;
-
-    AVBufferRef *tab_mvf_buf;
-    AVBufferRef *rpl_tab_buf;
 } HEVCFrame;
 
 typedef struct FilterData {
@@ -766,10 +758,10 @@ typedef struct HEVCContext {
     AVFrame *tmp_frame;
     VPS *vps;
     const HEVCSPS *sps;
-    HEVCPPS *pps;
+    PPS *pps;
     VPS *vps_list[MAX_VPS_COUNT];
-    AVBufferRef *sps_list[MAX_SPS_COUNT];
-    AVBufferRef *pps_list[MAX_PPS_COUNT];
+    HEVCSPS *sps_list[MAX_SPS_COUNT];
+    PPS *pps_list[MAX_PPS_COUNT];
 
     ///< candidate references for the current frame
     RefPicList rps[5];
@@ -831,11 +823,6 @@ typedef struct HEVCContext {
     uint8_t is_md5;
 
     int strict_def_disp_win;
-
-    int context_initialized;
-
-    AVBufferPool *tab_mvf_pool;
-    AVBufferPool *rpl_tab_pool;
     int is_nalff;         ///< this flag is != 0 if bitstream is encapsulated
                           ///< as a format defined in 14496-15
     int nal_length_size;  ///< Number of bytes used for nal length (1, 2 or 4)
@@ -863,6 +850,8 @@ void ff_hevc_flush_dpb(HEVCContext *s);
  */
 int ff_hevc_compute_poc(HEVCContext *s, int poc_lsb);
 
+int ff_hevc_add_ref(HEVCContext *s, AVFrame *frame, int poc);
+void ff_hevc_free_refPicListTab(HEVCContext *s, HEVCFrame *ref);
 RefPicList* ff_hevc_get_ref_list(HEVCContext *s, HEVCFrame *frame, int x0, int y0);
 
 /**
@@ -953,7 +942,7 @@ int ff_hevc_cu_qp_delta_abs(HEVCContext *s);
 void ff_hevc_hls_filter(HEVCContext *s, int x, int y);
 void ff_hevc_hls_filters(HEVCContext *s, int x_ctb, int y_ctb, int ctb_size);
 
-void ff_hevc_pps_free(HEVCPPS **ppps);
+void ff_hevc_pps_free(PPS **ppps);
 
 extern const uint8_t ff_hevc_qpel_extra_before[4];
 extern const uint8_t ff_hevc_qpel_extra_after[4];

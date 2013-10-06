@@ -222,6 +222,8 @@ static const uint8_t diag_scan8x8_inv[8][8] = {
 /* free everything allocated  by pic_arrays_init() */
 static void pic_arrays_free(HEVCContext *s)
 {
+    int i;
+
     av_freep(&s->sao);
     av_freep(&s->deblock);
     av_freep(&s->split_cu_flag);
@@ -240,8 +242,11 @@ static void pic_arrays_free(HEVCContext *s)
     av_freep(&s->horizontal_bs);
     av_freep(&s->vertical_bs);
 
-    av_buffer_pool_uninit(&s->tab_mvf_pool);
-    av_buffer_pool_uninit(&s->rpl_tab_pool);
+    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
+        av_freep(&s->DPB[i].tab_mvf);
+        ff_hevc_free_refPicListTab(s, &s->DPB[i]);
+        av_freep(&s->DPB[i].refPicListTab);
+    }
 }
 
 /* allocate arrays that depend on frame dimensions */
@@ -259,6 +264,8 @@ static int pic_arrays_init(HEVCContext *s)
     int pic_size_in_min_pu   = pic_width_in_min_pu * pic_height_in_min_pu;
     int pic_width_in_min_tu  = width  >> s->sps->log2_min_transform_block_size;
     int pic_height_in_min_tu = height >> s->sps->log2_min_transform_block_size;
+
+    int i;
 
     s->bs_width  = width  >> 3;
     s->bs_height = height >> 3;
@@ -291,15 +298,17 @@ static int pic_arrays_init(HEVCContext *s)
     if (!s->horizontal_bs || !s->vertical_bs)
         goto fail;
 
-    s->tab_mvf_pool = av_buffer_pool_init(pic_size_in_min_pu * sizeof(MvField),
-                                          av_buffer_alloc);
-    if (!s->tab_mvf_pool)
-        goto fail;
+    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
+        HEVCFrame *f = &s->DPB[i];
+        f->tab_mvf = av_malloc_array(pic_size_in_min_pu, sizeof(*f->tab_mvf));
+        if (!f->tab_mvf)
+            goto fail;
 
-    s->rpl_tab_pool = av_buffer_pool_init(ctb_count * sizeof(RefPicListTab),
-                                          av_buffer_allocz);
-    if (!s->rpl_tab_pool)
-        goto fail;
+        f->refPicListTab = av_mallocz_array(ctb_count, sizeof(*f->refPicListTab));
+        if (!f->refPicListTab)
+            goto fail;
+        f->ctb_count = ctb_count;
+    }
 
     return 0;
 fail:
@@ -460,7 +469,11 @@ static int hls_slice_header(HEVCContext *s)
 
     // Coded parameters
     sh->first_slice_in_pic_flag = get_bits1(gb);
-    if ((IS_IDR(s) || IS_BLA(s)) && sh->first_slice_in_pic_flag) {
+    if ((s->nal_unit_type == NAL_IDR_W_RADL || s->nal_unit_type == NAL_IDR_N_LP ||
+         s->nal_unit_type == NAL_BLA_W_LP ||
+         s->nal_unit_type == NAL_BLA_N_LP ||
+         s->nal_unit_type == NAL_BLA_N_LP) &&
+        sh->first_slice_in_pic_flag) {
         s->seq_decode = (s->seq_decode + 1) & 0xff;
         s->max_ra = INT_MAX;
         if (IS_IDR(s))
@@ -474,10 +487,10 @@ static int hls_slice_header(HEVCContext *s)
         av_log(s->avctx, AV_LOG_ERROR, "PPS id out of range: %d\n", sh->pps_id);
         return AVERROR_INVALIDDATA;
     }
-    s->pps = (HEVCPPS*)s->pps_list[sh->pps_id]->data;
+    s->pps = s->pps_list[sh->pps_id];
 
-    if (s->sps != (HEVCSPS*)s->sps_list[s->pps->sps_id]->data) {
-        s->sps = (HEVCSPS*)s->sps_list[s->pps->sps_id]->data;
+    if (s->sps != s->sps_list[s->pps->sps_id]) {
+        s->sps = s->sps_list[s->pps->sps_id];
         s->vps = s->vps_list[s->sps->vps_id];
 
         pic_arrays_free(s);
@@ -2327,8 +2340,6 @@ static int hevc_frame_start(HEVCContext *s)
         goto fail;
     }
 
-    ff_thread_finish_setup(s->avctx);
-
     return 0;
 fail:
     s->ref = NULL;
@@ -2698,36 +2709,6 @@ static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
     return avpkt->size;
 }
 
-static int hevc_ref_frame(HEVCContext *s, HEVCFrame *dst, HEVCFrame *src)
-{
-    int ret;
-
-    ret = ff_thread_ref_frame(&dst->tf, &src->tf);
-    if (ret < 0)
-        return ret;
-
-    dst->tab_mvf_buf = av_buffer_ref(src->tab_mvf_buf);
-    if (!dst->tab_mvf_buf)
-        goto fail;
-    dst->tab_mvf = src->tab_mvf;
-
-    dst->rpl_tab_buf = av_buffer_ref(src->rpl_tab_buf);
-    if (!dst->rpl_tab_buf)
-        goto fail;
-    dst->rpl_tab = src->rpl_tab;
-
-    dst->poc        = src->poc;
-    dst->ctb_count  = src->ctb_count;
-    dst->window     = src->window;
-    dst->flags      = src->flags;
-    dst->sequence   = src->sequence;
-
-    return 0;
-fail:
-    ff_hevc_unref_frame(s, dst, ~0);
-    return AVERROR(ENOMEM);
-}
-
 static av_cold int hevc_decode_free(AVCodecContext *avctx)
 {
     HEVCContext       *s = avctx->priv_data;
@@ -2743,17 +2724,14 @@ static av_cold int hevc_decode_free(AVCodecContext *avctx)
 
     av_freep(&s->md5_ctx);
 
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        ff_hevc_unref_frame(s, &s->DPB[i], ~0);
+    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++)
         av_frame_free(&s->DPB[i].frame);
-    }
-
     for (i = 0; i < FF_ARRAY_ELEMS(s->vps_list); i++)
         av_freep(&s->vps_list[i]);
     for (i = 0; i < FF_ARRAY_ELEMS(s->sps_list); i++)
-        av_buffer_unref(&s->sps_list[i]);
+        av_freep(&s->sps_list[i]);
     for (i = 0; i < FF_ARRAY_ELEMS(s->pps_list); i++)
-        av_buffer_unref(&s->pps_list[i]);
+        ff_hevc_pps_free(&s->pps_list[i]);
 
     return 0;
 }
@@ -2814,10 +2792,12 @@ static int hevc_decode_extradata(HEVCContext *s)
     return 0;
 }
 
-static av_cold int hevc_init_context(AVCodecContext *avctx)
+static av_cold int hevc_decode_init(AVCodecContext *avctx)
 {
     HEVCContext *s = avctx->priv_data;
     int i;
+
+    ff_init_cabac_states();
 
     s->avctx = avctx;
 
@@ -2829,7 +2809,6 @@ static av_cold int hevc_init_context(AVCodecContext *avctx)
         s->DPB[i].frame = av_frame_alloc();
         if (!s->DPB[i].frame)
             goto fail;
-        s->DPB[i].tf.f = s->DPB[i].frame;
     }
 
     s->max_ra = INT_MAX;
@@ -2838,7 +2817,6 @@ static av_cold int hevc_init_context(AVCodecContext *avctx)
     if (!s->md5_ctx)
         goto fail;
 
-    s->context_initialized = 1;
     if (avctx->extradata_size > 0 && avctx->extradata)
         return hevc_decode_extradata(s);
 
@@ -2846,90 +2824,6 @@ static av_cold int hevc_init_context(AVCodecContext *avctx)
 fail:
     hevc_decode_free(avctx);
     return AVERROR(ENOMEM);
-}
-
-static int hevc_update_thread_context(AVCodecContext *dst,
-                                      const AVCodecContext *src)
-{
-    HEVCContext *s  = dst->priv_data;
-    HEVCContext *s0 = src->priv_data;
-    int i, ret;
-
-    if (!s->context_initialized) {
-        ret = hevc_init_context(dst);
-        if (ret < 0)
-            return ret;
-    }
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        ff_hevc_unref_frame(s, &s->DPB[i], ~0);
-        if (s0->DPB[i].frame->buf[0]) {
-            ret = hevc_ref_frame(s, &s->DPB[i], &s0->DPB[i]);
-            if (ret < 0)
-                return ret;
-        }
-    }
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->sps_list); i++) {
-        av_buffer_unref(&s->sps_list[i]);
-        if (s0->sps_list[i]) {
-            s->sps_list[i] = av_buffer_ref(s0->sps_list[i]);
-            if (!s->sps_list[i])
-                return AVERROR(ENOMEM);
-        }
-    }
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->pps_list); i++) {
-        av_buffer_unref(&s->pps_list[i]);
-        if (s0->pps_list[i]) {
-            s->pps_list[i] = av_buffer_ref(s0->pps_list[i]);
-            if (!s->pps_list[i])
-                return AVERROR(ENOMEM);
-        }
-    }
-
-    s->seq_decode = s0->seq_decode;
-    s->seq_output = s0->seq_output;
-
-    return 0;
-}
-
-static av_cold int hevc_decode_init(AVCodecContext *avctx)
-{
-    HEVCContext *s = avctx->priv_data;
-    int ret;
-
-    ff_init_cabac_states();
-
-    avctx->internal->allocate_progress = 1;
-
-    ret = hevc_init_context(avctx);
-    if (ret < 0)
-        return ret;
-
-    if (avctx->extradata_size > 0 && avctx->extradata) {
-        ret = decode_nal_units(s, s->avctx->extradata, s->avctx->extradata_size);
-        if (ret < 0) {
-            hevc_decode_free(avctx);
-            return ret;
-        }
-    }
-
-    return 0;
-}
-
-static av_cold int hevc_init_thread_copy(AVCodecContext *avctx)
-{
-    HEVCContext *s = avctx->priv_data;
-    int ret;
-
-    memset(s, 0, sizeof(*s));
-
-    ret = hevc_init_context(avctx);
-    if (ret < 0)
-        return ret;
-
-    return 0;
 }
 
 static void hevc_decode_flush(AVCodecContext *avctx)
@@ -2957,17 +2851,15 @@ static const AVClass hevc_decoder_class = {
 };
 
 AVCodec ff_hevc_decoder = {
-    .name                  = "hevc",
-    .long_name             = NULL_IF_CONFIG_SMALL("HEVC (High Efficiency Video Coding)"),
-    .type                  = AVMEDIA_TYPE_VIDEO,
-    .id                    = AV_CODEC_ID_HEVC,
-    .priv_data_size        = sizeof(HEVCContext),
-    .priv_class            = &hevc_decoder_class,
-    .init                  = hevc_decode_init,
-    .close                 = hevc_decode_free,
-    .decode                = hevc_decode_frame,
-    .flush                 = hevc_decode_flush,
-    .update_thread_context = hevc_update_thread_context,
-    .init_thread_copy      = hevc_init_thread_copy,
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY | CODEC_CAP_FRAME_THREADS,
+    .name           = "hevc",
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_HEVC,
+    .priv_data_size = sizeof(HEVCContext),
+    .priv_class     = &hevc_decoder_class,
+    .init           = hevc_decode_init,
+    .close          = hevc_decode_free,
+    .decode         = hevc_decode_frame,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY,
+    .flush          = hevc_decode_flush,
+    .long_name      = NULL_IF_CONFIG_SMALL("HEVC (High Efficiency Video Coding)"),
 };
