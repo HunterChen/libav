@@ -2476,8 +2476,8 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
 
 /* FIXME: This is adapted from ff_h264_decode_nal, avoiding duplication
    between these functions would be nice. */
-static const uint8_t *extract_rbsp(HEVCContext *s, const uint8_t *src,
-                                   int *dst_length, int *consumed, int length)
+const uint8_t *ff_hevc_extract_rbsp(HEVCContext *s, const uint8_t *src,
+                                    int *dst_length, int *consumed, int length)
 {
     int i, si, di;
     uint8_t *dst;
@@ -2602,7 +2602,7 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
         if (!s->is_nalff || s->disable_au)
             extract_length = length;
 
-        nal = extract_rbsp(s, buf, &nal_length, &consumed, extract_length);
+        nal = ff_hevc_extract_rbsp(s, buf, &nal_length, &consumed, extract_length);
         if (!nal)
             return AVERROR(ENOMEM);
 
