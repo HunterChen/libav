@@ -227,8 +227,8 @@ static inline int parse_nal_units(AVCodecParserContext *s,
                 h->nal_unit_type != NAL_TRAIL_N &&
                 h->nal_unit_type != NAL_TSA_N &&
                 h->nal_unit_type != NAL_STSA_N &&
-                h->nal_unit_type != NAL_TRAIL_N &&
                 h->nal_unit_type != NAL_RADL_N &&
+                h->nal_unit_type != NAL_RASL_N &&
                 h->nal_unit_type != NAL_RADL_R &&
                 h->nal_unit_type != NAL_RASL_R)
                 h->pocTid0 = h->poc;
