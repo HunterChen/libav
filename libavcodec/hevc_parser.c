@@ -223,14 +223,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
             } else
                 s->output_picture_number = h->poc = 0;
 
-            if (h->temporal_id == 0 &&
-                h->nal_unit_type != NAL_TRAIL_N &&
-                h->nal_unit_type != NAL_TSA_N &&
-                h->nal_unit_type != NAL_STSA_N &&
-                h->nal_unit_type != NAL_RADL_N &&
-                h->nal_unit_type != NAL_RASL_N &&
-                h->nal_unit_type != NAL_RADL_R &&
-                h->nal_unit_type != NAL_RASL_R)
+            if (h->temporal_id == 0 && !IS_NONREF(h))
                 h->pocTid0 = h->poc;
 
             return 0; /* no need to evaluate the rest */

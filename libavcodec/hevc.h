@@ -74,6 +74,7 @@
 #define SAMPLE_CBF(tab, x, y) ((tab)[((y) & ((1<<log2_trafo_size)-1)) * MAX_CU_SIZE + ((x) & ((1<<log2_trafo_size)-1))])
 
 #define IS_IDR(s) (s->nal_unit_type == NAL_IDR_W_RADL || s->nal_unit_type == NAL_IDR_N_LP)
+#define IS_NONREF(s) (s->nal_unit_type <= 14 && (s->nal_unit_type & 0x01) == 0)
 
 /**
  * Table 7-3: NAL unit type codes
