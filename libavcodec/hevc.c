@@ -472,7 +472,7 @@ static int hls_slice_header(HEVCContext *s)
     if ((s->nal_unit_type == NAL_IDR_W_RADL || s->nal_unit_type == NAL_IDR_N_LP ||
          s->nal_unit_type == NAL_BLA_W_LP ||
          s->nal_unit_type == NAL_BLA_N_LP ||
-         s->nal_unit_type == NAL_BLA_N_LP) &&
+         s->nal_unit_type == NAL_BLA_W_RADL) &&
         sh->first_slice_in_pic_flag) {
         s->seq_decode = (s->seq_decode + 1) & 0xff;
         s->max_ra = INT_MAX;
@@ -2406,7 +2406,7 @@ static int decode_nal_unit(HEVCContext *s, const uint8_t *nal, int length)
             if (s->nal_unit_type == NAL_CRA_NUT  ||
                 s->nal_unit_type == NAL_BLA_W_LP ||
                 s->nal_unit_type == NAL_BLA_N_LP ||
-                s->nal_unit_type == NAL_BLA_N_LP) {
+                s->nal_unit_type == NAL_BLA_W_RADL) {
                 s->max_ra = s->poc;
             } else {
                 if (IS_IDR(s))
