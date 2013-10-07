@@ -325,7 +325,7 @@ static void pred_weight_table(HEVCContext *s, GetBitContext *gb)
     uint8_t luma_weight_l1_flag[16];
     uint8_t chroma_weight_l1_flag[16];
 
-    s->sh.luma_log2_weight_denom = get_ue_golomb(gb);
+    s->sh.luma_log2_weight_denom = get_ue_golomb_long(gb);
     if (s->sps->chroma_format_idc != 0) {
         int delta = get_se_golomb(gb);
         s->sh.chroma_log2_weight_denom = av_clip_c(s->sh.luma_log2_weight_denom + delta, 0, 7);
@@ -422,8 +422,8 @@ static int decode_lt_rps(HEVCContext *s, LongTermRPS *rps, GetBitContext *gb)
         return 0;
 
     if (sps->num_long_term_ref_pics_sps > 0)
-        nb_sps = get_ue_golomb(gb);
-    nb_sh = get_ue_golomb(gb);
+        nb_sps = get_ue_golomb_long(gb);
+    nb_sh = get_ue_golomb_long(gb);
 
     if (nb_sh + nb_sps > FF_ARRAY_ELEMS(rps->poc))
         return AVERROR_INVALIDDATA;
@@ -448,7 +448,7 @@ static int decode_lt_rps(HEVCContext *s, LongTermRPS *rps, GetBitContext *gb)
 
         delta_poc_msb_present = get_bits1(gb);
         if (delta_poc_msb_present) {
-            int delta = get_ue_golomb(gb);
+            int delta = get_ue_golomb_long(gb);
 
             if (i && i != nb_sps)
                 delta += prev_delta_msb;
@@ -482,7 +482,7 @@ static int hls_slice_header(HEVCContext *s)
     if (s->nal_unit_type >= 16 && s->nal_unit_type <= 23)
         sh->no_output_of_prior_pics_flag = get_bits1(gb);
 
-    sh->pps_id = get_ue_golomb(gb);
+    sh->pps_id = get_ue_golomb_long(gb);
     if (sh->pps_id >= MAX_PPS_COUNT || !s->pps_list[sh->pps_id]) {
         av_log(s->avctx, AV_LOG_ERROR, "PPS id out of range: %d\n", sh->pps_id);
         return AVERROR_INVALIDDATA;
@@ -556,7 +556,7 @@ static int hls_slice_header(HEVCContext *s)
         for (i = 0; i < s->pps->num_extra_slice_header_bits; i++)
             skip_bits(gb, 1); // slice_reserved_undetermined_flag[]
 
-        sh->slice_type = get_ue_golomb(gb);
+        sh->slice_type = get_ue_golomb_long(gb);
         if (!(sh->slice_type == I_SLICE || sh->slice_type == P_SLICE ||
               sh->slice_type == B_SLICE)) {
             av_log(s->avctx, AV_LOG_ERROR, "Unknown slice type: %d.\n",
@@ -619,7 +619,14 @@ static int hls_slice_header(HEVCContext *s)
             s->poc = 0;
         }
 
-        if (s->temporal_id == 0 && !IS_NONREF(s))
+        if (s->temporal_id == 0 &&
+            s->nal_unit_type != NAL_TRAIL_N &&
+            s->nal_unit_type != NAL_TSA_N &&
+            s->nal_unit_type != NAL_STSA_N &&
+            s->nal_unit_type != NAL_RADL_N &&
+            s->nal_unit_type != NAL_RASL_N &&
+            s->nal_unit_type != NAL_RADL_R &&
+            s->nal_unit_type != NAL_RASL_R)
             s->pocTid0 = s->poc;
 
         if (s->sps->sao_enabled) {
@@ -641,9 +648,9 @@ static int hls_slice_header(HEVCContext *s)
                 sh->nb_refs[L1] = s->pps->num_ref_idx_l1_default_active;
 
             if (get_bits1(gb)) { // num_ref_idx_active_override_flag
-                sh->nb_refs[L0] = get_ue_golomb(gb) + 1;
+                sh->nb_refs[L0] = get_ue_golomb_long(gb) + 1;
                 if (sh->slice_type == B_SLICE)
-                    sh->nb_refs[L1] = get_ue_golomb(gb) + 1;
+                    sh->nb_refs[L1] = get_ue_golomb_long(gb) + 1;
             }
             if (sh->nb_refs[L0] > MAX_REFS || sh->nb_refs[L1] > MAX_REFS) {
                 av_log(s->avctx, AV_LOG_ERROR, "Too many refs: %d/%d.\n",
@@ -689,7 +696,7 @@ static int hls_slice_header(HEVCContext *s)
                     sh->collocated_list = !get_bits1(gb);
 
                 if (sh->nb_refs[sh->collocated_list] > 1) {
-                    sh->collocated_ref_idx = get_ue_golomb(gb);
+                    sh->collocated_ref_idx = get_ue_golomb_long(gb);
                     if (sh->collocated_ref_idx >= sh->nb_refs[sh->collocated_list]) {
                         av_log(s->avctx, AV_LOG_ERROR,
                                "Invalid collocated_ref_idx: %d.\n", sh->collocated_ref_idx);
@@ -703,7 +710,7 @@ static int hls_slice_header(HEVCContext *s)
                 pred_weight_table(s, gb);
             }
 
-            sh->max_num_merge_cand = 5 - get_ue_golomb(gb);
+            sh->max_num_merge_cand = 5 - get_ue_golomb_long(gb);
         }
 
         sh->slice_qp_delta = get_se_golomb(gb);
@@ -751,9 +758,9 @@ static int hls_slice_header(HEVCContext *s)
 
     sh->num_entry_point_offsets = 0;
     if (s->pps->tiles_enabled_flag || s->pps->entropy_coding_sync_enabled_flag) {
-        sh->num_entry_point_offsets = get_ue_golomb(gb);
+        sh->num_entry_point_offsets = get_ue_golomb_long(gb);
         if (sh->num_entry_point_offsets > 0) {
-            int offset_len = get_ue_golomb(gb) + 1;
+            int offset_len = get_ue_golomb_long(gb) + 1;
 
             for (i = 0; i < sh->num_entry_point_offsets; i++)
                 skip_bits(gb, offset_len);
@@ -761,7 +768,7 @@ static int hls_slice_header(HEVCContext *s)
     }
 
     if (s->pps->slice_header_extension_present_flag) {
-        int length = get_ue_golomb(gb);
+        int length = get_ue_golomb_long(gb);
         for (i = 0; i < length; i++)
             skip_bits(gb, 8); // slice_header_extension_data_byte
     }
