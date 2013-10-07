@@ -886,6 +886,8 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
     int last_scan_pos;
     int n_end;
     int num_coeff = 0;
+    int greater1_ctx = 1;
+
     int num_last_subset;
     int x_cg_last_sig, y_cg_last_sig;
 
@@ -896,7 +898,8 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
     int vshift = s->sps->vshift[c_idx];
     uint8_t *dst = &s->frame->data[c_idx][(y0 >> vshift) * stride +
                                            ((x0 >> hshift) << s->sps->pixel_shift)];
-    DECLARE_ALIGNED( 16, int16_t, coeffs[MAX_TB_SIZE * MAX_TB_SIZE] ) = {0};
+    DECLARE_ALIGNED(16, int16_t, coeffs[MAX_TB_SIZE * MAX_TB_SIZE]) = {0};
+    DECLARE_ALIGNED(8, uint8_t, significant_coeff_group_flag[8][8]) = {{0}};
 
     int trafo_size = 1 << log2_trafo_size;
     int i;
@@ -908,8 +911,18 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
     // Derive QP for dequant
     if (!lc->cu.cu_transquant_bypass_flag) {
         static const int qp_c[] = { 29, 30, 31, 32, 33, 33, 34, 34, 35, 35, 36, 36, 37, 37 };
-        int qp_y = lc->qp_y;
+        static const uint8_t rem6[51 + 2 * 6 + 1] = {
+            0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2,
+            3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5,
+            0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3,
+        };
 
+        static const uint8_t div6[51 + 2 * 6 + 1] = {
+            0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3,  3,  3,
+            3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6,  6,  6,
+            7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10,
+        };
+        int qp_y = lc->qp_y;
         if (c_idx == 0) {
             qp = qp_y + s->sps->qp_bd_offset;
         } else {
@@ -933,7 +946,7 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
 
         shift    = s->sps->bit_depth + log2_trafo_size - 5;
         add      = 1 << (shift-1);
-        scale    = level_scale[qp%6] << (qp/6);
+        scale    = level_scale[rem6[qp]] << (div6[qp]);
         scale_m  = 16; // default when no custom scaling lists.
         dc_scale = 16;
 
@@ -950,8 +963,6 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
                 dc_scale = sl->sl_dc[log2_trafo_size - 4][matrix_id];
         }
     }
-
-    memset(lc->rc.significant_coeff_group_flag, 0, 8 * 8);
 
     if (s->pps->transform_skip_enabled_flag && !lc->cu.cu_transquant_bypass_flag &&
         log2_trafo_size == 2) {
@@ -1025,38 +1036,34 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
         break;
     }
     num_coeff++;
-
     num_last_subset = (num_coeff - 1) >> 4;
 
     for (i = num_last_subset; i >= 0; i--) {
         int n, m;
-        int first_nz_pos_in_cg, last_nz_pos_in_cg, num_sig_coeff, first_greater1_coeff_idx;
-        int sign_hidden;
-        int sum_abs;
         int x_cg, y_cg, x_c, y_c, pos;
         int implicit_non_zero_coeff = 0;
         int64_t trans_coeff_level;
-
+        int prev_sig = 0;
         int offset = i << 4;
 
-        uint8_t significant_coeff_flag_idx[16] = {0};
-        uint8_t coeff_abs_level_greater1_flag[16] = {0};
-        uint8_t coeff_abs_level_greater2_flag[16] = {0};
-        uint16_t coeff_sign_flag;
+        uint8_t significant_coeff_flag_idx[16];
         uint8_t nb_significant_coeff_flag = 0;
-
-        int first_elem;
 
         x_cg = scan_x_cg[i];
         y_cg = scan_y_cg[i];
 
         if ((i < num_last_subset) && (i > 0)) {
-            lc->rc.significant_coeff_group_flag[x_cg][y_cg] =
-            ff_hevc_significant_coeff_group_flag_decode(s, c_idx, x_cg, y_cg,
-                                                        log2_trafo_size);
+            int ctx_cg = 0;
+            if (x_cg < (1 << (log2_trafo_size - 2)) - 1)
+                ctx_cg += significant_coeff_group_flag[x_cg + 1][y_cg];
+            if (y_cg < (1 << (log2_trafo_size - 2)) - 1)
+                ctx_cg += significant_coeff_group_flag[x_cg][y_cg + 1];
+
+            significant_coeff_group_flag[x_cg][y_cg] =
+            ff_hevc_significant_coeff_group_flag_decode(s, c_idx, ctx_cg);
             implicit_non_zero_coeff = 1;
         } else {
-            lc->rc.significant_coeff_group_flag[x_cg][y_cg] =
+            significant_coeff_group_flag[x_cg][y_cg] =
             ((x_cg == x_cg_last_sig && y_cg == y_cg_last_sig) ||
              (x_cg == 0 && y_cg == 0));
         }
@@ -1070,107 +1077,126 @@ static void hls_residual_coding(HEVCContext *s, int x0, int y0,
         } else {
             n_end = 15;
         }
+
+        if (x_cg < ((1 << log2_trafo_size) - 1) >> 2)
+            prev_sig = significant_coeff_group_flag[x_cg + 1][y_cg];
+        if (y_cg < ((1 << log2_trafo_size) - 1) >> 2)
+            prev_sig += (significant_coeff_group_flag[x_cg][y_cg + 1] << 1);
+
         for (n = n_end; n >= 0; n--) {
             GET_COORD(offset, n);
 
-            if (lc->rc.significant_coeff_group_flag[x_cg][y_cg] &&
+            if (significant_coeff_group_flag[x_cg][y_cg] &&
                 (n > 0 || implicit_non_zero_coeff == 0)) {
-                if (ff_hevc_significant_coeff_flag_decode(s, c_idx, x_c, y_c, log2_trafo_size, scan_idx) == 1) {
+                if (ff_hevc_significant_coeff_flag_decode(s, c_idx, x_c, y_c, log2_trafo_size, scan_idx, prev_sig) == 1) {
                     significant_coeff_flag_idx[nb_significant_coeff_flag] = n;
-                    nb_significant_coeff_flag = nb_significant_coeff_flag + 1;
+                    nb_significant_coeff_flag++;
                     implicit_non_zero_coeff = 0;
                 }
             } else {
                 int last_cg = (x_c == (x_cg << 2) && y_c == (y_cg << 2));
-                if (last_cg && implicit_non_zero_coeff && lc->rc.significant_coeff_group_flag[x_cg][y_cg]) {
+                if (last_cg && implicit_non_zero_coeff && significant_coeff_group_flag[x_cg][y_cg]) {
                     significant_coeff_flag_idx[nb_significant_coeff_flag] = n;
-                    nb_significant_coeff_flag = nb_significant_coeff_flag + 1;
+                    nb_significant_coeff_flag++;
                 }
             }
         }
 
         n_end = nb_significant_coeff_flag;
 
-        first_nz_pos_in_cg = 16;
-        last_nz_pos_in_cg = -1;
-        num_sig_coeff = 0;
-        first_greater1_coeff_idx = -1;
-        for (m = 0; m < n_end; m++) {
-            n = significant_coeff_flag_idx[m];
-            if (num_sig_coeff < 8) {
-                coeff_abs_level_greater1_flag[n] =
-                ff_hevc_coeff_abs_level_greater1_flag_decode(s, c_idx, i, n,
-                                                             (num_sig_coeff == 0),
-                                                             (i == num_last_subset));
-                num_sig_coeff++;
-                if (coeff_abs_level_greater1_flag[n] &&
+
+        if (n_end) {
+            int first_nz_pos_in_cg = 16;
+            int last_nz_pos_in_cg = -1;
+            int c_rice_param = 0;
+            int first_greater1_coeff_idx = -1;
+            uint8_t coeff_abs_level_greater1_flag[16] = {0};
+            uint16_t coeff_sign_flag;
+            int sum_abs = 0;
+            int sign_hidden = 0;
+
+            // initialize first elem of coeff_bas_level_greater1_flag
+            int ctx_set = (i > 0 && c_idx == 0) ? 2 : 0;
+
+            if (!(i == num_last_subset) && greater1_ctx == 0)
+                ctx_set++;
+            greater1_ctx = 1;
+            last_nz_pos_in_cg = significant_coeff_flag_idx[0];
+
+            for (m = 0; m < (n_end > 8 ? 8 : n_end); m++) {
+                int n_idx = significant_coeff_flag_idx[m];
+                int inc = (ctx_set << 2) + greater1_ctx;
+                coeff_abs_level_greater1_flag[n_idx] =
+                    ff_hevc_coeff_abs_level_greater1_flag_decode(s, c_idx, inc);
+                if (coeff_abs_level_greater1_flag[n_idx]) {
+                    greater1_ctx = 0;
+                } else if (greater1_ctx > 0 && greater1_ctx < 3) {
+                    greater1_ctx++;
+                }
+                
+                if (coeff_abs_level_greater1_flag[n_idx] &&
                     first_greater1_coeff_idx == -1)
-                    first_greater1_coeff_idx = n;
+                    first_greater1_coeff_idx = n_idx;
             }
-            if (last_nz_pos_in_cg == -1)
-                last_nz_pos_in_cg = n;
-            first_nz_pos_in_cg = n;
-        }
+            first_nz_pos_in_cg = significant_coeff_flag_idx[n_end - 1];
+            sign_hidden = (last_nz_pos_in_cg - first_nz_pos_in_cg >= 4 &&
+                           !lc->cu.cu_transquant_bypass_flag);
 
-        sign_hidden = (last_nz_pos_in_cg - first_nz_pos_in_cg >= 4 &&
-                       !lc->cu.cu_transquant_bypass_flag);
-        if (first_greater1_coeff_idx != -1) {
-            coeff_abs_level_greater2_flag[first_greater1_coeff_idx] =
-            ff_hevc_coeff_abs_level_greater2_flag_decode(s, c_idx, i, first_greater1_coeff_idx);
-        }
-        if (!s->pps->sign_data_hiding_flag || !sign_hidden ) {
-            coeff_sign_flag = ff_hevc_coeff_sign_flag(s, nb_significant_coeff_flag) << (16 - nb_significant_coeff_flag);
-        } else {
-            coeff_sign_flag = ff_hevc_coeff_sign_flag(s, nb_significant_coeff_flag-1) << (16 - (nb_significant_coeff_flag - 1));
-        }
-
-        num_sig_coeff = 0;
-        sum_abs = 0;
-        first_elem = 1;
-        for (m = 0; m < n_end; m++) {
-            n = significant_coeff_flag_idx[m];
-            GET_COORD(offset, n);
-            trans_coeff_level = 1 + coeff_abs_level_greater1_flag[n] +
-                                coeff_abs_level_greater2_flag[n];
-            if (trans_coeff_level == ((num_sig_coeff < 8) ?
-                                      ((n == first_greater1_coeff_idx) ? 3 : 2) : 1)) {
-                trans_coeff_level += ff_hevc_coeff_abs_level_remaining(s, first_elem, trans_coeff_level);
-                first_elem = 0;
+            if (first_greater1_coeff_idx != -1) {
+                coeff_abs_level_greater1_flag[first_greater1_coeff_idx] += ff_hevc_coeff_abs_level_greater2_flag_decode(s, c_idx, ctx_set);
             }
-            if (s->pps->sign_data_hiding_flag && sign_hidden) {
-                sum_abs += trans_coeff_level;
-                if (n == first_nz_pos_in_cg && ((sum_abs&1) == 1))
+            if (!s->pps->sign_data_hiding_flag || !sign_hidden ) {
+                coeff_sign_flag = ff_hevc_coeff_sign_flag(s, nb_significant_coeff_flag) << (16 - nb_significant_coeff_flag);
+            } else {
+                coeff_sign_flag = ff_hevc_coeff_sign_flag(s, nb_significant_coeff_flag - 1) << (16 - (nb_significant_coeff_flag - 1));
+            }
+
+            for (m = 0; m < n_end; m++) {
+                n = significant_coeff_flag_idx[m];
+                GET_COORD(offset, n);
+                trans_coeff_level = 1 + coeff_abs_level_greater1_flag[n];
+                if (trans_coeff_level == ((m < 8) ?
+                                          ((n == first_greater1_coeff_idx) ? 3 : 2) : 1)) {
+                    int last_coeff_abs_level_remaining = ff_hevc_coeff_abs_level_remaining(s, trans_coeff_level, c_rice_param);
+
+                    trans_coeff_level += last_coeff_abs_level_remaining;
+                    if ((trans_coeff_level) > (3 * (1 << c_rice_param)))
+                        c_rice_param = FFMIN(c_rice_param + 1, 4);
+
+                }
+                if (s->pps->sign_data_hiding_flag && sign_hidden) {
+                    sum_abs += trans_coeff_level;
+                    if (n == first_nz_pos_in_cg && ((sum_abs&1) == 1))
+                        trans_coeff_level = -trans_coeff_level;
+                }
+                if (coeff_sign_flag >> 15)
                     trans_coeff_level = -trans_coeff_level;
-            }
-            if (coeff_sign_flag >> 15)
-                trans_coeff_level = -trans_coeff_level;
-            coeff_sign_flag <<= 1;
-            num_sig_coeff++;
-
-            if (!lc->cu.cu_transquant_bypass_flag) {
-                if(s->sps->scaling_list_enable_flag) {
-                    if(y_c || x_c || log2_trafo_size < 4) {
-                        switch(log2_trafo_size) {
-                            case 3: pos = (y_c << 3) + x_c; break;
-                            case 4: pos = ((y_c >> 1) << 3) + (x_c >> 1); break;
-                            case 5: pos = ((y_c >> 2) << 3) + (x_c >> 2); break;
-                            default: pos = (y_c << 2) + x_c;
+                coeff_sign_flag <<= 1;
+                if(!lc->cu.cu_transquant_bypass_flag) {
+                    if(s->sps->scaling_list_enable_flag) {
+                        if(y_c || x_c || log2_trafo_size < 4) {
+                            switch(log2_trafo_size) {
+                                case 3: pos = (y_c << 3) + x_c; break;
+                                case 4: pos = ((y_c >> 1) << 3) + (x_c >> 1); break;
+                                case 5: pos = ((y_c >> 2) << 3) + (x_c >> 2); break;
+                                default: pos = (y_c << 2) + x_c;
+                            }
+                            scale_m = scale_matrix[pos];
+                        } else {
+                            scale_m = dc_scale;
                         }
-                        scale_m = scale_matrix[pos];
-                    } else
-                        scale_m = dc_scale;
+                    }
+                    trans_coeff_level = (trans_coeff_level * (int64_t)scale * (int64_t)scale_m + add) >> shift;
+                    if(trans_coeff_level < 0) {
+                        if((~trans_coeff_level) & 0xFffffffffff8000)
+                            trans_coeff_level = -32768;
+                    } else {
+                        if(trans_coeff_level & 0xffffffffffff8000)
+                            trans_coeff_level = 32767;
+                    }
                 }
-                trans_coeff_level = (trans_coeff_level * (int64_t)scale * (int64_t)scale_m + add) >> shift;
-                if (trans_coeff_level < 0) {
-                    if((~trans_coeff_level) & 0xFffffffffff8000)
-                        trans_coeff_level = -32768;
-                } else {
-                    if(trans_coeff_level & 0xffffffffffff8000)
-                        trans_coeff_level = 32767;
-                }
+                coeffs[y_c * trafo_size + x_c] = trans_coeff_level;
             }
-
-            coeffs[y_c * trafo_size + x_c] = trans_coeff_level;
         }
     }
 
